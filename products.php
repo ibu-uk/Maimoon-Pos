@@ -8,10 +8,11 @@ $db = db();
 
 // Handle add product
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add') {
-    $stmt = $db->prepare("INSERT INTO products (name,name_ar,sku,barcode,category_id,brand,cost_price,retail_price,wholesale_price,color,size,unit_type,description) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    $stmt = $db->prepare("INSERT INTO products (name,name_ar,emoji,sku,barcode,category_id,sub_category_id,brand,origin_country,cost_price,retail_price,wholesale_price,color,size,unit_type,description) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
     $stmt->execute([
-        trim($_POST['name']), trim($_POST['name_ar'] ?? ''), trim($_POST['sku']), trim($_POST['barcode'] ?? ''), (int)$_POST['category_id'],
-        trim($_POST['brand']), (float)$_POST['cost_price'], (float)$_POST['retail_price'],
+        trim($_POST['name']), trim($_POST['name_ar'] ?? ''), trim($_POST['emoji'] ?? ''), trim($_POST['sku']), trim($_POST['barcode'] ?? ''), (int)$_POST['category_id'], 
+        !empty($_POST['sub_category_id']) ? (int)$_POST['sub_category_id'] : null,
+        trim($_POST['brand']), trim($_POST['origin_country'] ?? ''), (float)$_POST['cost_price'], (float)$_POST['retail_price'],
         (float)$_POST['wholesale_price'], trim($_POST['color']), trim($_POST['size']),
         $_POST['unit_type'] ?? 'pc', trim($_POST['description'])
     ]);
@@ -28,10 +29,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
 
 // Handle edit product
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit') {
-    $stmt = $db->prepare("UPDATE products SET name=?,name_ar=?,sku=?,barcode=?,category_id=?,brand=?,cost_price=?,retail_price=?,wholesale_price=?,color=?,size=?,unit_type=?,description=? WHERE id=?");
+    $stmt = $db->prepare("UPDATE products SET name=?,name_ar=?,emoji=?,sku=?,barcode=?,category_id=?,sub_category_id=?,brand=?,origin_country=?,cost_price=?,retail_price=?,wholesale_price=?,color=?,size=?,unit_type=?,description=? WHERE id=?");
     $stmt->execute([
-        trim($_POST['name']), trim($_POST['name_ar'] ?? ''), trim($_POST['sku']), trim($_POST['barcode'] ?? ''), (int)$_POST['category_id'],
-        trim($_POST['brand']), (float)$_POST['cost_price'], (float)$_POST['retail_price'],
+        trim($_POST['name']), trim($_POST['name_ar'] ?? ''), trim($_POST['emoji'] ?? ''), trim($_POST['sku']), trim($_POST['barcode'] ?? ''), (int)$_POST['category_id'],
+        !empty($_POST['sub_category_id']) ? (int)$_POST['sub_category_id'] : null,
+        trim($_POST['brand']), trim($_POST['origin_country'] ?? ''), (float)$_POST['cost_price'], (float)$_POST['retail_price'],
         (float)$_POST['wholesale_price'], trim($_POST['color']), trim($_POST['size']),
         $_POST['unit_type'] ?? 'pc', trim($_POST['description']), (int)$_POST['product_id']
     ]);
@@ -81,9 +83,11 @@ $total_rows = $total_count->fetchColumn();
 $total_pages = ceil($total_rows / $per_page);
 
 $stmt = $db->prepare("
-    SELECT p.*, c.name as cat_name, c.name_ar as cat_name_ar, c.emoji, COALESCE(SUM(s.qty),0) as total_stock
+    SELECT p.*, c.name as cat_name, c.name_ar as cat_name_ar, c.emoji as cat_emoji, sc.name as sub_category_name, sc.emoji as sub_category_emoji,
+           COALESCE(SUM(s.qty),0) as total_stock
     FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
+    LEFT JOIN categories sc ON sc.id = p.sub_category_id
     LEFT JOIN stock s ON s.product_id = p.id
     $where
     GROUP BY p.id ORDER BY p.name LIMIT $per_page OFFSET $offset
@@ -140,7 +144,7 @@ require __DIR__ . '/includes/header.php';
             <div style="display:flex;gap:4px">
               <button class="btn btn-ghost btn-sm" onclick='editProduct(<?= json_encode($p, JSON_HEX_APOS|JSON_HEX_QUOT) ?>)'>✏️</button>
               <a href="<?= BASE ?>/products.php?toggle=<?= $p['id'] ?>" class="btn btn-ghost btn-sm" onclick="return confirm('Toggle status?')"><?= $p['is_active'] ? '🔴' : '🟢' ?></a>
-              <button class="btn btn-ghost btn-sm" onclick="showToast('Barcode','Printing barcode...','success')">🏷️</button>
+              <button class="btn btn-ghost btn-sm" onclick="window.open('<?= BASE ?>/barcode.php?product_id=<?= $p['id'] ?>', '_blank')">🏷️</button>
               <form method="POST" style="display:inline" onsubmit="return confirm('Delete this product? This cannot be undone.')">
                 <input type="hidden" name="action" value="delete"><input type="hidden" name="product_id" value="<?= $p['id'] ?>">
                 <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--red)">🗑️</button>
@@ -182,16 +186,121 @@ require __DIR__ . '/includes/header.php';
         </div>
         <div class="form-group"><label class="form-label"><?= __('barcode') ?></label><input class="form-input" name="barcode" id="prod-barcode" placeholder="e.g. 1234567890123" style="font-family:var(--mono)"></div>
         <div class="form-group"><label class="form-label"><?= __('product_name_ar') ?></label><input class="form-input" name="name_ar" id="prod-name-ar" placeholder="مثال: حقيبة شنيل مصغرة" style="direction:rtl"></div>
+        <div class="form-group"><label class="form-label">Emoji</label><input class="form-input" name="emoji" id="prod-emoji" placeholder="e.g. 👜, 👗, 💍" style="font-size:24px;text-align:center"></div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label"><?= __('category') ?></label>
             <select class="form-select" name="category_id" id="prod-cat">
+              <option value="">-- Select Category --</option>
               <?php foreach ($categories as $cat): ?>
-              <option value="<?= $cat['id'] ?>"><?= $cat['parent_id'] ? '&nbsp;&nbsp;↳ ' : '' ?><?= $cat['emoji'] ?> <?= htmlspecialchars($cat['name']) ?></option>
+              <?php if (!$cat['parent_id']): ?>
+              <option value="<?= $cat['id'] ?>"><?= $cat['emoji'] ?> <?= htmlspecialchars($cat['name']) ?></option>
+              <?php endif; ?>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sub-Category</label>
+            <select class="form-select" name="sub_category_id" id="prod-subcat">
+              <option value="">-- Select Sub-Category --</option>
+              <?php foreach ($categories as $cat): ?>
+              <?php if ($cat['parent_id']): ?>
+              <option value="<?= $cat['id'] ?>"><?= $cat['emoji'] ?> <?= htmlspecialchars($cat['name']) ?> (<?= $cat['parent_name'] ?>)</option>
+              <?php endif; ?>
               <?php endforeach; ?>
             </select>
           </div>
           <div class="form-group"><label class="form-label"><?= __('brand') ?></label><input class="form-input" name="brand" id="prod-brand" placeholder="e.g. Chanel"></div>
+          <div class="form-group"><label class="form-label">Origin Country</label>
+            <select class="form-select" name="origin_country" id="prod-origin">
+            <option value="">-- Select Country --</option>
+            <option value="Afghanistan">Afghanistan</option>
+            <option value="Albania">Albania</option>
+            <option value="Algeria">Algeria</option>
+            <option value="Andorra">Andorra</option>
+            <option value="Angola">Angola</option>
+            <option value="Argentina">Argentina</option>
+            <option value="Armenia">Armenia</option>
+            <option value="Australia">Australia</option>
+            <option value="Austria">Austria</option>
+            <option value="Azerbaijan">Azerbaijan</option>
+            <option value="Bahrain">Bahrain</option>
+            <option value="Bangladesh">Bangladesh</option>
+            <option value="Belgium">Belgium</option>
+            <option value="Bolivia">Bolivia</option>
+            <option value="Brazil">Brazil</option>
+            <option value="Bulgaria">Bulgaria</option>
+            <option value="Cambodia">Cambodia</option>
+            <option value="Canada">Canada</option>
+            <option value="Chile">Chile</option>
+            <option value="China">China</option>
+            <option value="Colombia">Colombia</option>
+            <option value="Costa Rica">Costa Rica</option>
+            <option value="Croatia">Croatia</option>
+            <option value="Cuba">Cuba</option>
+            <option value="Cyprus">Cyprus</option>
+            <option value="Czech Republic">Czech Republic</option>
+            <option value="Denmark">Denmark</option>
+            <option value="Egypt">Egypt</option>
+            <option value="Estonia">Estonia</option>
+            <option value="Finland">Finland</option>
+            <option value="France">France</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Germany">Germany</option>
+            <option value="Greece">Greece</option>
+            <option value="Hong Kong">Hong Kong</option>
+            <option value="Hungary">Hungary</option>
+            <option value="India">India</option>
+            <option value="Indonesia">Indonesia</option>
+            <option value="Iran">Iran</option>
+            <option value="Iraq">Iraq</option>
+            <option value="Ireland">Ireland</option>
+            <option value="Israel">Israel</option>
+            <option value="Italy">Italy</option>
+            <option value="Japan">Japan</option>
+            <option value="Jordan">Jordan</option>
+            <option value="Kazakhstan">Kazakhstan</option>
+            <option value="Kuwait">Kuwait</option>
+            <option value="Latvia">Latvia</option>
+            <option value="Lebanon">Lebanon</option>
+            <option value="Lithuania">Lithuania</option>
+            <option value="Malaysia">Malaysia</option>
+            <option value="Mexico">Mexico</option>
+            <option value="Monaco">Monaco</option>
+            <option value="Morocco">Morocco</option>
+            <option value="Netherlands">Netherlands</option>
+            <option value="New Zealand">New Zealand</option>
+            <option value="Nigeria">Nigeria</option>
+            <option value="Norway">Norway</option>
+            <option value="Oman">Oman</option>
+            <option value="Pakistan">Pakistan</option>
+            <option value="Panama">Panama</option>
+            <option value="Peru">Peru</option>
+            <option value="Philippines">Philippines</option>
+            <option value="Poland">Poland</option>
+            <option value="Portugal">Portugal</option>
+            <option value="Qatar">Qatar</option>
+            <option value="Romania">Romania</option>
+            <option value="Russia">Russia</option>
+            <option value="Saudi Arabia">Saudi Arabia</option>
+            <option value="Singapore">Singapore</option>
+            <option value="South Africa">South Africa</option>
+            <option value="South Korea">South Korea</option>
+            <option value="Spain">Spain</option>
+            <option value="Sweden">Sweden</option>
+            <option value="Switzerland">Switzerland</option>
+            <option value="Syria">Syria</option>
+            <option value="Taiwan">Taiwan</option>
+            <option value="Thailand">Thailand</option>
+            <option value="Turkey">Turkey</option>
+            <option value="Ukraine">Ukraine</option>
+            <option value="United Arab Emirates">United Arab Emirates</option>
+            <option value="United Kingdom">United Kingdom</option>
+            <option value="United States">United States</option>
+            <option value="Vietnam">Vietnam</option>
+            <option value="Yemen">Yemen</option>
+          </select>
+          </div>
         </div>
         <div class="form-row-3">
           <div class="form-group"><label class="form-label"><?= __('cost_price') ?> (<?= get_setting('currency', 'KWD') ?>)</label><input class="form-input" name="cost_price" id="prod-cost" type="number" step="0.001" min="0" value="0.000" required></div>
@@ -224,13 +333,14 @@ require __DIR__ . '/includes/header.php';
 
 <?php
 $extra_js = '<script>
+const CATEGORIES = ' . json_encode($categories) . ';
+
 function openAddProduct() {
-  document.getElementById("prod-form").reset();
   document.getElementById("prod-action").value = "add";
   document.getElementById("prod-id").value = "";
-  document.getElementById("prod-modal-title").textContent = "' . __('add_product') . '";
-  document.getElementById("prod-submit-btn").textContent = "' . __('save_product') . '";
-  document.getElementById("prod-stock-wrap").style.display = "";
+  document.getElementById("prod-form").reset();
+  document.getElementById("prod-submit-btn").textContent = "' . __('add_product') . '";
+  document.getElementById("prod-stock-wrap").style.display = "block";
   openModal("product-modal");
 }
 
@@ -239,10 +349,13 @@ function editProduct(p) {
   document.getElementById("prod-id").value = p.id;
   document.getElementById("prod-name").value = p.name;
   document.getElementById("prod-name-ar").value = p.name_ar || "";
+  document.getElementById("prod-emoji").value = p.emoji || "";
   document.getElementById("prod-sku").value = p.sku;
   document.getElementById("prod-barcode").value = p.barcode || "";
   document.getElementById("prod-cat").value = p.category_id;
+  document.getElementById("prod-subcat").value = p.sub_category_id || "";
   document.getElementById("prod-brand").value = p.brand || "";
+  document.getElementById("prod-origin").value = p.origin_country || "";
   document.getElementById("prod-cost").value = parseFloat(p.cost_price).toFixed(3);
   document.getElementById("prod-retail").value = parseFloat(p.retail_price).toFixed(3);
   document.getElementById("prod-wholesale").value = parseFloat(p.wholesale_price).toFixed(3);
@@ -250,9 +363,8 @@ function editProduct(p) {
   document.getElementById("prod-size").value = p.size || "";
   document.getElementById("prod-unit").value = p.unit_type || "pc";
   document.getElementById("prod-desc").value = p.description || "";
-  document.getElementById("prod-modal-title").textContent = "' . __('edit_product') . '";
   document.getElementById("prod-submit-btn").textContent = "' . __('save_product') . '";
-  document.getElementById("prod-stock-wrap").style.display = "none";
+  document.getElementById("prod-stock-wrap").style.display = "";
   openModal("product-modal");
 }
 </script>';

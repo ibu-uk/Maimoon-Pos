@@ -13,17 +13,21 @@ $cat_bgs    = ['Bags'=>'rgba(67,97,238,0.08)','Watches'=>'rgba(59,130,246,0.08)'
                 'Accessories'=>'rgba(236,72,153,0.08)','Shoes'=>'rgba(20,184,166,0.08)','Wallets'=>'rgba(245,158,11,0.08)'];
 
 $products = $db->query("
-  SELECT p.id, p.name, p.name_ar, p.sku, p.barcode, p.category_id, c.name as category, c.name_ar as category_ar, p.retail_price, p.wholesale_price, COALESCE(s.qty,0) as stock
+  SELECT p.id, p.name, p.name_ar, p.emoji, p.sku, p.barcode, p.category_id, c.name as category, c.name_ar as category_ar, c.emoji as cat_emoji,
+         p.sub_category_id, sc.name as sub_category, sc.emoji as sub_cat_emoji,
+         p.retail_price, p.wholesale_price, COALESCE(s.qty,0) as stock
   FROM products p
   LEFT JOIN categories c ON c.id = p.category_id
+  LEFT JOIN categories sc ON sc.id = p.sub_category_id
   LEFT JOIN stock s ON s.product_id = p.id AND s.branch_id = $branch_id
   WHERE p.is_active = 1
-  ORDER BY c.name, p.name
+  ORDER BY c.name, sc.name, p.name
 ")->fetchAll();
 
 $categories = $db->query("SELECT DISTINCT name, name_ar FROM categories ORDER BY name")->fetchAll();
 $customers  = $db->query("SELECT id, name, phone, type, balance FROM customers WHERE is_active=1 ORDER BY id ASC")->fetchAll();
 $currency = get_setting('currency', 'KWD');
+if (!$currency || $currency === '0') $currency = 'KWD';
 
 // Active offers for POS
 $active_offers = $db->query("
@@ -143,16 +147,23 @@ require __DIR__ . '/includes/header.php';
 
     <div class="cart-footer">
       <div class="cart-totals">
-        <div class="cart-row"><span><?= __('subtotal') ?></span><span id="cart-subtotal"><?= $currency ?> 0.000</span></div>
+        <div class="cart-row"><span><?= __('subtotal') ?></span><span id="cart-subtotal">0.000</span></div>
         <div id="promo-applied" style="display:none;padding:4px 0">
-          <div class="cart-row" style="color:var(--green);font-size:11px"><span id="promo-label">🎯 <?= __('offer_applied') ?></span><span id="promo-amount">- <?= $currency ?> 0.000</span></div>
+          <div class="cart-row" style="color:var(--green);font-size:11px"><span id="promo-label">🎯 <?= __('offer_applied') ?></span><span id="promo-amount">- 0.000</span></div>
         </div>
         <div style="display:flex;gap:4px;margin:6px 0">
           <input type="text" id="promo-code-input" placeholder="<?= __('promo_code') ?>" style="flex:1;padding:4px 8px;font-size:11px;border:1px solid var(--border2);border-radius:4px;background:var(--bg2);color:var(--text);text-transform:uppercase">
           <button type="button" class="btn btn-ghost btn-sm" onclick="applyPromoCode()" style="font-size:10px;padding:4px 8px"><?= __('apply') ?></button>
         </div>
-        <div class="cart-row"><span><?= __('extra_disc') ?> <input type="number" id="discount-pct" value="0" min="0" max="100" style="width:36px;background:var(--bg4);border:1px solid var(--border2);border-radius:4px;color:var(--text);padding:2px 4px;font-size:11px" onchange="recalc()">%</span><span id="cart-discount" style="color:var(--red)">- <?= $currency ?> 0.000</span></div>
-        <div class="cart-row total"><span><?= __('total') ?></span><span id="cart-total" class="text-green"><?= $currency ?> 0.000</span></div>
+        <div class="cart-row"><span><?= __('extra_disc') ?></span>
+          <div style="display:flex;gap:4px;align-items:center">
+            <button type="button" class="btn btn-ghost btn-sm" id="disc-type-pct" onclick="setDiscType('pct')" style="padding:2px 8px;font-size:10px;border:1px solid var(--accent);background:rgba(67,97,238,.1);color:var(--accent)">%</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="disc-type-fixed" onclick="setDiscType('fixed')" style="padding:2px 8px;font-size:10px;border:1px solid var(--border2);background:var(--bg2);color:var(--text3)"><?= $currency ?></button>
+            <input type="number" id="discount-value" value="0" min="0" max="100" style="width:50px;background:var(--bg4);border:1px solid var(--border2);border-radius:4px;color:var(--text);padding:2px 4px;font-size:11px" onchange="recalc()">
+          </div>
+          <span id="cart-discount" style="color:var(--red)">- 0.000</span>
+        </div>
+        <div class="cart-row total"><span><?= __('total') ?></span><span id="cart-total" class="text-green">0.000</span></div>
       </div>
       <div style="margin-bottom:10px;font-size:12px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:.5px"><?= __('payment_mode') ?></div>
       <div class="payment-modes">
@@ -168,10 +179,7 @@ require __DIR__ . '/includes/header.php';
         <input type="number" class="form-input" id="partial-amount" step="0.001" min="0.001" placeholder="0.000" style="font-size:14px;font-weight:600">
         <div style="font-size:11px;color:var(--amber);margin-top:4px"><?= __('remaining_credit') ?></div>
       </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost w-full" onclick="holdSale()">⏸ <?= __('hold') ?></button>
-        <button class="btn btn-green w-full" onclick="processSale()">✓ <?= __('charge') ?></button>
-      </div>
+      <button class="btn btn-green w-full" onclick="processSale()">✓ <?= __('charge') ?></button>
     </div>
   </div>
 </div>
@@ -213,11 +221,12 @@ const PRODUCTS = ' . json_encode(array_map(function($p) use ($cat_emojis, $cat_b
         'name'      => $p['name'],
         'sku'       => $p['sku'],
         'cat'       => $p['category'],
+        'subcat'    => $p['sub_category'] ?? '',
         'cat_id'    => (int)$p['category_id'],
         'price'     => (float)$p['retail_price'],
         'wholesale' => (float)$p['wholesale_price'],
         'stock'     => (int)$p['stock'],
-        'emoji'     => $cat_emojis[$p['category']] ?? '📦',
+        'emoji'     => $p['emoji'] ?? ($p['sub_cat_emoji'] ?? ($cat_emojis[$p['category']] ?? '📦')),
         'bg'        => $cat_bgs[$p['category']] ?? 'rgba(67,97,238,0.08)',
     ];
 }, $products)) . ';
@@ -278,6 +287,7 @@ let selectedPayMode = "cash";
 let selectedCustomerId = 1; // Walk-in by default
 let appliedPromo = null; // {id, title, type, value, applies}
 let promoDiscount = 0;
+let discountType = "pct"; // "pct" for percentage, "fixed" for fixed KWD
 
 // ── BARCODE SCANNER ──
 (function() {
@@ -527,13 +537,14 @@ function recalc() {
   if (!cart.length) { appliedPromo = null; promoDiscount = 0; }
 
   const afterPromo = afterItemDisc - promoDiscount;
-  const globalDisc = afterPromo * (parseFloat(document.getElementById("discount-pct").value)||0) / 100;
+  const discValue = parseFloat(document.getElementById("discount-value").value)||0;
+  const globalDisc = discountType === "pct" ? afterPromo * (discValue / 100) : Math.min(discValue, afterPromo);
   const total = afterPromo - globalDisc;
   const totalDisc = itemDiscTotal + globalDisc;
 
-  document.getElementById("cart-subtotal").textContent = "<?= $currency ?> " + sub.toFixed(3);
-  document.getElementById("cart-discount").textContent = "- <?= $currency ?> " + totalDisc.toFixed(3);
-  document.getElementById("cart-total").textContent    = "<?= $currency ?> " + total.toFixed(3);
+  document.getElementById("cart-subtotal").textContent = sub.toFixed(3);
+  document.getElementById("cart-discount").textContent = "- " + totalDisc.toFixed(3);
+  document.getElementById("cart-total").textContent    = total.toFixed(3);
   document.getElementById("cart-count").textContent    = cart.reduce((a,i)=>a+i.qty,0) + " " + LANG.items;
 
   // Show promo
@@ -541,7 +552,7 @@ function recalc() {
   if (appliedPromo && promoDiscount > 0) {
     promoEl.style.display = "block";
     document.getElementById("promo-label").textContent = "🎯 " + appliedPromo.title;
-    document.getElementById("promo-amount").textContent = "- <?= $currency ?> " + promoDiscount.toFixed(3);
+    document.getElementById("promo-amount").textContent = "- " + promoDiscount.toFixed(3);
   } else {
     promoEl.style.display = "none";
   }
@@ -647,6 +658,33 @@ function selectPayMode(el) {
   document.getElementById("partial-pay-box").style.display = selectedPayMode === "partial" ? "block" : "none";
 }
 
+function setDiscType(type) {
+  discountType = type;
+  const pctBtn = document.getElementById("disc-type-pct");
+  const fixedBtn = document.getElementById("disc-type-fixed");
+  const input = document.getElementById("discount-value");
+  
+  if (type === "pct") {
+    pctBtn.style.borderColor = "var(--accent)";
+    pctBtn.style.background = "rgba(67,97,238,.1)";
+    pctBtn.style.color = "var(--accent)";
+    fixedBtn.style.borderColor = "var(--border2)";
+    fixedBtn.style.background = "var(--bg2)";
+    fixedBtn.style.color = "var(--text3)";
+    input.max = "100";
+  } else {
+    fixedBtn.style.borderColor = "var(--accent)";
+    fixedBtn.style.background = "rgba(67,97,238,.1)";
+    fixedBtn.style.color = "var(--accent)";
+    pctBtn.style.borderColor = "var(--border2)";
+    pctBtn.style.background = "var(--bg2)";
+    pctBtn.style.color = "var(--text3)";
+    input.removeAttribute("max");
+  }
+  input.value = "0";
+  recalc();
+}
+
 function holdSale() {
   if (!cart.length) { showToast(LANG.warning, LANG.empty_cart, "warning"); return; }
   showToast(LANG.hold_msg, LANG.success, "warning");
@@ -654,7 +692,7 @@ function holdSale() {
 
 function processSale() {
   if (!cart.length) { showToast(LANG.warning, LANG.empty_cart, "warning"); return; }
-  const disc = parseFloat(document.getElementById("discount-pct").value)||0;
+  const discValue = parseFloat(document.getElementById("discount-value").value)||0;
   const customerId = document.getElementById("cart-customer").value;
   if (selectedPayMode === "partial") {
     const partialAmt = parseFloat(document.getElementById("partial-amount").value)||0;
@@ -663,9 +701,9 @@ function processSale() {
   }
   if (selectedPayMode === "credit" && customerId == 1) { showToast(LANG.error, LANG.select_customer_credit, "warning"); return; }
   const paidAmount = selectedPayMode === "partial" ? parseFloat(document.getElementById("partial-amount").value)||0 : null;
-  const payload = { cart, payment_mode: selectedPayMode, discount_pct: disc, customer_id: customerId, offer_id: appliedPromo ? appliedPromo.id : null, promo_discount: promoDiscount, paid_amount: paidAmount };
+  const payload = { cart, payment_mode: selectedPayMode, discount_type: discountType, discount_value: discValue, customer_id: customerId, offer_id: appliedPromo ? appliedPromo.id : null, promo_discount: promoDiscount, paid_amount: paidAmount };
 
-  fetch("<?= BASE ?>/api/sale.php", {
+  fetch("' . BASE . '/api/sale.php", {
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify(payload)
@@ -675,6 +713,10 @@ function processSale() {
       clearCart();
       // Reset to walk-in
       document.querySelector(".cust-tab[data-tab=walkin]").click();
+      // Open invoice for printing
+      if (data.invoice_id) {
+        window.open("' . BASE . '/invoice.php?id=" + data.invoice_id + "&print=1", "_blank");
+      }
     } else {
       showToast(LANG.error, data.error || LANG.sale_failed, "error");
     }
@@ -682,6 +724,8 @@ function processSale() {
 }
 
 renderProductGrid(PRODUCTS);
+// Initialize discount type on page load
+setTimeout(() => setDiscType("pct"), 100);
 </script>';
 require __DIR__ . '/includes/footer.php';
 ?>

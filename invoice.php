@@ -4,9 +4,11 @@ require_login();
 
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) die('Invoice ID required');
+$auto_print = isset($_GET['print']) && $_GET['print'] === '1';
+$printer_format = get_setting('printer_format', 'a4'); // Get default from settings
 
 $db = db();
-$inv = $db->query("
+$stmt = $db->prepare("
   SELECT i.*, c.name as customer_name, c.name_ar as customer_name_ar, c.address, c.address_ar, c.phone,
          b.name as branch_name, b.address as branch_address, b.phone as branch_phone,
          u.name as created_by_name
@@ -15,16 +17,20 @@ $inv = $db->query("
   JOIN branches b ON b.id = i.branch_id
   JOIN users u ON u.id = i.created_by
   WHERE i.id = ?
-")->fetch($id);
+");
+$stmt->execute([$id]);
+$inv = $stmt->fetch();
 
 if (!$inv) die('Invoice not found');
 
-$items = $db->query("
+$stmt = $db->prepare("
   SELECT ii.*, p.name, p.name_ar, p.sku
   FROM invoice_items ii
   JOIN products p ON p.id = ii.product_id
   WHERE ii.invoice_id = ?
-")->fetchAll($id);
+");
+$stmt->execute([$id]);
+$items = $stmt->fetchAll();
 
 $company_name = get_setting('company_name', 'RetailPro Kuwait LLC');
 $company_address = get_setting('address', 'Block 4, Shop 12, Salmiya, Kuwait');
@@ -79,9 +85,16 @@ $decimals = ($currency === 'KWD') ? 3 : 2;
     .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; color: #666; font-size: 11px; }
     .footer .arabic { direction: rtl; display: block; margin-top: 5px; }
     @media print { body { background: white; padding: 0; } .invoice { box-shadow: none; max-width: 100%; } }
+    /* Thermal printer format */
+    .thermal .invoice { max-width: 80mm; padding: 10px; font-size: 10px; }
+    .thermal .header { flex-direction: column; align-items: center; text-align: center; }
+    .thermal .invoice-title { text-align: center; margin-top: 15px; }
+    .thermal .grid-2 { grid-template-columns: 1fr; gap: 10px; }
+    .thermal table th, .thermal table td { padding: 6px 8px; font-size: 10px; }
+    .thermal .totals { width: 100%; }
   </style>
 </head>
-<body>
+<body class="<?= $printer_format === 'thermal' ? 'thermal' : '' ?>">
   <div class="invoice">
     <!-- Header -->
     <div class="header">
@@ -218,8 +231,10 @@ $decimals = ($currency === 'KWD') ? 3 : 2;
   </div>
 
   <script>
+    <?php if ($auto_print): ?>
     window.print();
     window.onafterprint = function() { window.close(); };
+    <?php endif; ?>
   </script>
 </body>
 </html>

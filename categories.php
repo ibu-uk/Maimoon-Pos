@@ -13,14 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ── CATEGORY ACTIONS ──
     if ($action === 'add_cat') {
         $db->prepare("INSERT INTO categories (name,name_ar,emoji,parent_id,description) VALUES (?,?,?,?,?)")->execute([
-            trim($_POST['name']), trim($_POST['name_ar'] ?? ''), trim($_POST['emoji'] ?: '📦'), $_POST['parent_id'] ?: null, trim($_POST['description'])
+            trim($_POST['name']), trim($_POST['name_ar'] ?? ''), trim($_POST['emoji'] ?: '📦'), !empty($_POST['parent_id']) ? (int)$_POST['parent_id'] : null, trim($_POST['description'])
         ]);
         header('Location: ' . BASE . '/categories.php?success=' . urlencode('Category added'));
         exit;
     }
     if ($action === 'edit_cat') {
         $db->prepare("UPDATE categories SET name=?,name_ar=?, emoji=?, parent_id=?, description=? WHERE id=?")->execute([
-            trim($_POST['name']), trim($_POST['name_ar'] ?? ''), trim($_POST['emoji'] ?: '📦'), $_POST['parent_id'] ?: null, trim($_POST['description']), (int)$_POST['id']
+            trim($_POST['name']), trim($_POST['name_ar'] ?? ''), trim($_POST['emoji'] ?: '📦'), !empty($_POST['parent_id']) ? (int)$_POST['parent_id'] : null, trim($_POST['description']), (int)$_POST['id']
         ]);
         header('Location: ' . BASE . '/categories.php?success=' . urlencode('Category updated'));
         exit;
@@ -28,14 +28,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'delete_cat') {
         $cid = (int)$_POST['id'];
         // Check if products use this category
-        $count = $db->prepare("SELECT COUNT(*) FROM products WHERE category_id=?");
-        $count->execute([$cid]);
+        $count = $db->prepare("SELECT COUNT(*) FROM products WHERE category_id=? OR sub_category_id=?");
+        $count->execute([$cid, $cid]);
         if ($count->fetchColumn() > 0) {
             header('Location: ' . BASE . '/categories.php?error=' . urlencode('Cannot delete: category has products'));
             exit;
         }
-        // Also reassign sub-categories to no parent
-        $db->prepare("UPDATE categories SET parent_id=NULL WHERE parent_id=?")->execute([$cid]);
         $db->prepare("DELETE FROM categories WHERE id=?")->execute([$cid]);
         header('Location: ' . BASE . '/categories.php?success=' . urlencode('Category deleted'));
         exit;
@@ -85,11 +83,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ── LOAD DATA ──
 $all_cats = $db->query("SELECT c.*, pc.name as parent_name, pc.emoji as parent_emoji,
-    (SELECT COUNT(*) FROM products WHERE category_id=c.id) as product_count,
-    (SELECT COUNT(*) FROM categories WHERE parent_id=c.id) as sub_count
+    (SELECT COUNT(*) FROM products WHERE category_id=c.id OR sub_category_id=c.id) as product_count
     FROM categories c
     LEFT JOIN categories pc ON pc.id = c.parent_id
-    ORDER BY COALESCE(c.parent_id,c.id), c.parent_id IS NOT NULL, c.name")->fetchAll();
+    ORDER BY c.name")->fetchAll();
 
 $parent_cats = $db->query("SELECT * FROM categories WHERE parent_id IS NULL ORDER BY name")->fetchAll();
 $units = $db->query("SELECT u.*, (SELECT COUNT(*) FROM products WHERE unit_type=u.abbreviation) as product_count FROM units u ORDER BY u.name")->fetchAll();
@@ -107,11 +104,10 @@ require __DIR__ . '/includes/header.php';
 <!-- ══════════════════════════════════════ CATEGORIES TAB ══════════════════════════════════════ -->
 <div id="tab-categories" style="<?= $active_tab==='units'?'display:none':'' ?>">
 
-<div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+<div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
   <div class="stat-card blue"><div class="stat-label"><?= __('total_categories') ?></div><div class="stat-value text-blue"><?= count($all_cats) ?></div></div>
-  <div class="stat-card green"><div class="stat-label"><?= __('parent_categories') ?></div><div class="stat-value text-green"><?= count($parent_cats) ?></div></div>
-  <div class="stat-card purple"><div class="stat-label"><?= __('sub_categories') ?></div><div class="stat-value text-accent"><?= count($all_cats) - count($parent_cats) ?></div></div>
-  <div class="stat-card amber"><div class="stat-label"><?= __('active') ?></div><div class="stat-value text-amber"><?= count(array_filter($all_cats, fn($c) => $c['is_active'])) ?></div></div>
+  <div class="stat-card green"><div class="stat-label">Main Categories</div><div class="stat-value text-green"><?= count($parent_cats) ?></div></div>
+  <div class="stat-card purple"><div class="stat-label">Sub Categories</div><div class="stat-value text-accent"><?= count($all_cats) - count($parent_cats) ?></div></div>
 </div>
 
 <div class="card">
@@ -121,13 +117,12 @@ require __DIR__ . '/includes/header.php';
   </div>
   <div class="tbl-wrap">
     <table>
-      <thead><tr><th><?= __('category') ?></th><th><?= __('parent') ?></th><th><?= __('total_products') ?></th><th><?= __('sub_categories') ?></th><th><?= __('status') ?></th><th><?= __('actions') ?></th></tr></thead>
+      <thead><tr><th><?= __('category') ?></th><th>Type</th><th>Parent</th><th><?= __('total_products') ?></th><th><?= __('status') ?></th><th><?= __('actions') ?></th></tr></thead>
       <tbody>
         <?php foreach ($all_cats as $c): ?>
         <tr>
           <td>
-            <div style="display:flex;align-items:center;gap:8px;<?= $c['parent_id'] ? 'padding-left:24px' : '' ?>">
-              <?php if ($c['parent_id']): ?><span style="color:var(--text3);font-size:11px">↳</span><?php endif; ?>
+            <div style="display:flex;align-items:center;gap:8px">
               <span style="font-size:18px"><?= $c['emoji'] ?></span>
               <div>
                 <div style="font-weight:500"><?= htmlspecialchars($c['name']) ?><?php if ($c['name_ar']) echo '<br><span style="font-size:11px;color:var(--text3)">' . htmlspecialchars($c['name_ar']) . '</span>'; ?></div>
@@ -135,9 +130,9 @@ require __DIR__ . '/includes/header.php';
               </div>
             </div>
           </td>
+          <td><span class="badge <?= $c['parent_id'] ? 'badge-blue' : 'badge-green' ?>"><?= $c['parent_id'] ? 'Sub' : 'Main' ?></span></td>
           <td><?= $c['parent_name'] ? $c['parent_emoji'] . ' ' . htmlspecialchars($c['parent_name']) : '<span class="text-muted">—</span>' ?></td>
           <td style="font-weight:600"><?= $c['product_count'] ?></td>
-          <td><?= $c['sub_count'] ?: '<span class="text-muted">—</span>' ?></td>
           <td>
             <form method="POST" style="display:inline"><input type="hidden" name="action" value="toggle_cat"><input type="hidden" name="id" value="<?= $c['id'] ?>">
               <button type="submit" class="badge <?= $c['is_active'] ? 'badge-green' : 'badge-gray' ?>" style="cursor:pointer;border:none"><span class="dot"></span><?= $c['is_active'] ? __('active') : __('inactive') ?></button>
@@ -229,9 +224,15 @@ require __DIR__ . '/includes/header.php';
         </div>
         <div class="form-group"><label class="form-label"><?= __('category_name_ar') ?></label><input class="form-input" name="name_ar" id="cat-name-ar" placeholder="مثال: حقائب" style="direction:rtl"></div>
         <div class="form-group">
-          <label class="form-label"><?= __('parent_category') ?></label>
+          <label style="display:inline-flex;align-items:center;gap:8px;font-weight:500">
+            <input type="checkbox" name="is_subcategory" id="cat-is-sub" onchange="toggleParentDropdown()">
+            This is a Sub-Category
+          </label>
+        </div>
+        <div class="form-group" id="cat-parent-group" style="display:none">
+          <label class="form-label">Parent Category</label>
           <select class="form-select" name="parent_id" id="cat-parent">
-            <option value="">— None (Top-level) —</option>
+            <option value="">-- Select Parent Category --</option>
             <?php foreach ($parent_cats as $pc): ?>
             <option value="<?= $pc['id'] ?>"><?= $pc['emoji'] ?> <?= htmlspecialchars($pc['name']) ?></option>
             <?php endforeach; ?>
@@ -278,14 +279,21 @@ function switchTab(id, el) {
   el.classList.add("active");
 }
 
+function toggleParentDropdown() {
+  const isSub = document.getElementById("cat-is-sub").checked;
+  document.getElementById("cat-parent-group").style.display = isSub ? "block" : "none";
+}
+
 function editCat(c) {
   document.getElementById("cat-action").value = "edit_cat";
   document.getElementById("cat-id").value = c.id;
   document.getElementById("cat-name").value = c.name;
   document.getElementById("cat-name-ar").value = c.name_ar || "";
   document.getElementById("cat-emoji").value = c.emoji;
+  document.getElementById("cat-is-sub").checked = !!c.parent_id;
   document.getElementById("cat-parent").value = c.parent_id || "";
   document.getElementById("cat-desc").value = c.description || "";
+  toggleParentDropdown();
   document.getElementById("cat-modal-title").textContent = "' . __('edit_category') . '";
   openModal("cat-modal");
 }

@@ -7,7 +7,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not
 $data = json_decode(file_get_contents('php://input'), true);
 $cart          = $data['cart']         ?? [];
 $pay_mode      = $data['payment_mode'] ?? 'cash';
-$disc_pct      = (float)($data['discount_pct'] ?? 0);
+$disc_type     = $data['discount_type'] ?? 'pct';
+$disc_value    = (float)($data['discount_value'] ?? 0);
 $customer_id   = (int)($data['customer_id'] ?? 1);
 $offer_id      = !empty($data['offer_id']) ? (int)$data['offer_id'] : null;
 $promo_disc    = (float)($data['promo_discount'] ?? 0);
@@ -30,7 +31,7 @@ try {
     }
     $after_item_disc = $subtotal - $item_disc_total;
     $after_promo = $after_item_disc - $promo_disc;
-    $global_disc = $after_promo * ($disc_pct / 100);
+    $global_disc = ($disc_type === 'pct') ? $after_promo * ($disc_value / 100) : min($disc_value, $after_promo);
     $discount = $item_disc_total + $promo_disc + $global_disc;
     $total    = $subtotal - $discount;
 
@@ -85,7 +86,7 @@ try {
     }
 
     $db->commit();
-    json_response(['success' => true, 'invoice_number' => $inv_num, 'total' => number_format($total, 3)]);
+    json_response(['success' => true, 'invoice_id' => $inv_id, 'invoice_number' => $inv_num, 'total' => number_format($total, 3)]);
 } catch (Exception $e) {
     $db->rollBack();
     json_response(['error' => $e->getMessage()], 500);

@@ -104,6 +104,13 @@ require __DIR__ . '/includes/header.php';
       </label>
       <div style="font-size:11px;color:var(--text3);margin-top:4px">Enable to display your company logo at the top of printed invoices</div>
     </div>
+    <div class="form-group"><label class="form-label">Default Printer Format</label>
+      <select class="form-select" name="printer_format">
+        <option value="a4" <?= ($settings['printer_format'] ?? 'a4') === 'a4' ? 'selected' : '' ?>>A4 (Standard)</option>
+        <option value="thermal" <?= ($settings['printer_format'] ?? 'a4') === 'thermal' ? 'selected' : '' ?>>Thermal (80mm)</option>
+      </select>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Select default format for invoice printing</div>
+    </div>
     <button type="submit" class="btn btn-primary"><?= __('save') ?></button>
   </div>
 
