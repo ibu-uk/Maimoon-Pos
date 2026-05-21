@@ -174,6 +174,7 @@ require __DIR__ . '/includes/header.php';
               <option value=""><?= __('all') ?></option>
               <?php foreach ($branches as $b): ?><option value="<?= $b['id'] ?>"><?= htmlspecialchars($b['name']) ?></option><?php endforeach; ?>
             </select>
+            <span id="branch-hint" style="font-size:11px;color:var(--text3)"></span>
           </div>
         </div>
       </div>
