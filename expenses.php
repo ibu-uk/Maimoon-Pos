@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/config.php';
 require_login();
+require_role('super_admin');
 $current_page = 'expenses';
 $page_title   = __('expense_tracker');
 $db = db();

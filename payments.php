@@ -326,8 +326,8 @@ require __DIR__ . '/includes/header.php';
   </div>
 </div>
 
-<?php
-$extra_js = '<script>
+<?php ob_start(); ?>
+<script>
 function switchTab(id, el) {
   document.querySelectorAll("#customers-tab,#suppliers-tab,#history-tab").forEach(t => t.style.display="none");
   document.getElementById(id).style.display = "block";
@@ -347,11 +347,12 @@ function editPayment(p) {
   document.getElementById("ep-notes").value = p.notes || "";
   openModal("edit-pay-modal");
 }
+const COMPANY_NAME = "<?= htmlspecialchars(get_setting('company_name', APP_NAME)) ?>";
 function printTable(tableId, title) {
   const table = document.getElementById(tableId);
   const win = window.open("","_blank");
   win.document.write("<html><head><title>" + title + "</title><style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f0f2f5;font-weight:600}.header{text-align:center;margin-bottom:20px}</style></head><body>");
-  win.document.write("<div class=header><h2>RetailPro — " + title + "</h2></div>");
+  win.document.write("<div class=header><h2>" + COMPANY_NAME + " — " + title + "</h2></div>");
   const clone = table.cloneNode(true);
   clone.querySelectorAll("tr").forEach(row => { const cells = row.querySelectorAll("th,td"); if(cells.length>=4) cells[cells.length-1].remove(); });
   win.document.write(clone.outerHTML);
@@ -363,7 +364,7 @@ function printPayments() {
   const table = document.getElementById("payments-table");
   const win = window.open("","_blank");
   win.document.write("<html><head><title>Payment History</title><style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f0f2f5;font-weight:600}.header{text-align:center;margin-bottom:20px}</style></head><body>");
-  win.document.write("<div class=header><h2>RetailPro — Payment History</h2></div>");
+  win.document.write("<div class=header><h2>" + COMPANY_NAME + " — Payment History</h2></div>");
   const clone = table.cloneNode(true);
   clone.querySelectorAll("tr").forEach(row => { const cells = row.querySelectorAll("th,td"); if(cells.length>=8) cells[cells.length-1].remove(); });
   win.document.write(clone.outerHTML);
@@ -371,5 +372,7 @@ function printPayments() {
   win.document.close();
   win.print();
 }
-</script>';
+</script>
+<?php
+$extra_js = ob_get_clean();
 require __DIR__ . '/includes/footer.php'; ?>

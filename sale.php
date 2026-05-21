@@ -22,6 +22,31 @@ $db = db();
 $db->beginTransaction();
 
 try {
+    // ── Hard expiry check — block sale if any product has expired batch ──────
+    $expiry_check = $db->prepare("
+        SELECT p.name, sb.expiry_date, DATEDIFF(sb.expiry_date, CURDATE()) as days_left
+        FROM stock_batches sb
+        JOIN products p ON p.id = sb.product_id
+        WHERE sb.product_id = ?
+        AND sb.branch_id = ?
+        AND sb.qty_remaining > 0
+        AND sb.expiry_date IS NOT NULL
+        AND sb.expiry_date < CURDATE()
+        LIMIT 1
+    ");
+    foreach ($cart as $item) {
+        $expiry_check->execute([(int)$item['id'], $branch_id]);
+        $expired = $expiry_check->fetch();
+        if ($expired) {
+            $db->rollBack();
+            json_response(['error' => 'Cannot sell "' . $expired['name'] . '" — batch expired on ' . $expired['expiry_date'] . '. Remove it from the cart.'], 400);
+        }
+    }
+
+    $tc          = get_tax_config();
+    $tax_rate    = $tc['tax_rate'];
+    $tax_type    = $tc['tax_type'];
+    $tax_inclusive = $tc['tax_inclusive'] === '1';
     $subtotal = 0;
     $item_disc_total = 0;
     foreach ($cart as $item) {
@@ -34,19 +59,6 @@ try {
     $global_disc = ($disc_type === 'pct') ? $after_promo * ($disc_value / 100) : min($disc_value, $after_promo);
     $discount = $item_disc_total + $promo_disc + $global_disc;
     $total    = $subtotal - $discount;
-
-    // Validate stock FIRST — before creating invoice number or inserting anything
-    $chk = $db->prepare("SELECT qty, (SELECT name FROM products WHERE id=?) as pname FROM stock WHERE product_id=? AND branch_id=?");
-    foreach ($cart as $item) {
-        $pid = (int)$item['id'];
-        $chk->execute([$pid, $pid, $branch_id]);
-        $row = $chk->fetch();
-        $available = $row ? (int)$row['qty'] : 0;
-        if ($available < (int)$item['qty']) {
-            $pname = $row['pname'] ?? ('Product #' . $pid);
-            throw new Exception('Insufficient stock for "' . $pname . '" — available: ' . $available . ', requested: ' . (int)$item['qty']);
-        }
-    }
 
     $inv_num = next_invoice_number();
 
@@ -67,12 +79,23 @@ try {
         INSERT INTO invoices (invoice_number,customer_id,branch_id,payment_mode,subtotal,discount,vat,total,paid_amount,status,created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)
     ");
-    $stmt->execute([$inv_num, $customer_id, $branch_id, $pay_mode, $subtotal, $discount, 0, $total, $paid, $status, $user['id']]);
+    // Calculate tax
+    $vat_amount = 0;
+    if ($tax_type !== 'none' && $tax_rate > 0) {
+        if ($tax_inclusive) {
+            $vat_amount = round($total - ($total / (1 + $tax_rate/100)), $tc['currency_decimals']);
+        } else {
+            $vat_amount = round($total * ($tax_rate/100), $tc['currency_decimals']);
+            $total     += $vat_amount;
+            if (isset($paid) && $pay_mode !== 'credit') { $paid = $total; }
+        }
+    }
+    $stmt->execute([$inv_num, $customer_id, $branch_id, $pay_mode, $subtotal, $discount, $vat_amount, $total, $paid, $status, $user['id']]);
     $inv_id = $db->lastInsertId();
 
     // Insert items + deduct stock
     $item_stmt  = $db->prepare("INSERT INTO invoice_items (invoice_id,product_id,qty,unit_price,total) VALUES (?,?,?,?,?)");
-    $stock_stmt = $db->prepare("UPDATE stock SET qty = qty - ? WHERE product_id = ? AND branch_id = ? AND qty >= ?");
+    $stock_stmt = $db->prepare("UPDATE stock SET qty = qty - ? WHERE product_id = ? AND branch_id = ?");
     $move_stmt  = $db->prepare("INSERT INTO stock_movements (product_id,branch_id,type,qty,reference,user_id) VALUES (?,?,'out',?,?,?)");
 
     foreach ($cart as $item) {
@@ -83,11 +106,8 @@ try {
         $lineTotal = $price * $qty;
         $lineNet   = $lineTotal - ($lineTotal * $iDisc / 100);
         $item_stmt->execute([$inv_id, $pid, $qty, $price, $lineNet]);
-        $stock_stmt->execute([$qty, $pid, $branch_id, $qty]);
-        if ($stock_stmt->rowCount() === 0) {
-            throw new Exception('Stock conflict for product ID ' . $pid . ' — please refresh and retry.');
-        }
-        $move_stmt->execute([$pid, $branch_id, $qty, $inv_num, $user['id']]);
+        $stock_stmt->execute([$qty, $pid, $branch_id]);
+        $move_stmt->execute([$pid, $branch_id, -$qty, $inv_num, $user['id']]);
     }
 
     // Update offer usage count

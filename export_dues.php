@@ -2,20 +2,18 @@
 require_once __DIR__ . '/../includes/config.php';
 require_login();
 $_exp_co = preg_replace('/[^A-Za-z0-9_-]/', '_', trim(get_setting('company_name', 'Company')));
-$tc = get_tax_config();
-$currency = $tc['currency'];
-$decimals = $tc['currency_decimals'];
+$currency = get_setting('currency', 'KWD');
 
 $db = db();
 $type = $_GET['type'] ?? 'customer';
 
 if ($type === 'customer') {
     $data = $db->query("SELECT name, phone, type, balance, credit_limit FROM customers WHERE balance < 0 ORDER BY balance ASC")->fetchAll();
-    $filename = $_exp_co . '_Customer_Dues_' . date('Y-m-d') . '.csv';
+    $filename = '$_exp_co . '_Customer_Dues_' . date('Y-m-d') . '.csv';
     $headers = ['Customer', 'Phone', 'Type', 'Balance Due (' . $currency . ')', 'Credit Limit (' . $currency . ')'];
 } else {
     $data = $db->query("SELECT company, contact_name, phone, payment_terms, balance FROM suppliers WHERE balance < 0 ORDER BY balance ASC")->fetchAll();
-    $filename = $_exp_co . '_Supplier_Dues_' . date('Y-m-d') . '.csv';
+    $filename = '$_exp_co . '_Supplier_Dues_' . date('Y-m-d') . '.csv';
     $headers = ['Company', 'Contact', 'Phone', 'Payment Terms', 'Amount Due (' . $currency . ')'];
 }
 

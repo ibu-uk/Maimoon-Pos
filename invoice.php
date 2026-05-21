@@ -32,15 +32,18 @@ $stmt = $db->prepare("
 $stmt->execute([$id]);
 $items = $stmt->fetchAll();
 
-$company_name = get_setting('company_name', 'RetailPro Kuwait LLC');
+$company_name = get_setting('company_name', get_setting('company_name', APP_NAME));
 $company_address = get_setting('address', 'Block 4, Shop 12, Salmiya, Kuwait');
 $company_phone = get_setting('phone', '+965 2244-1100');
-$vat_number = get_setting('vat_number', 'KWT-30082024-00841');
-$invoice_footer = get_setting('invoice_footer', 'Thank you for shopping with RetailPro. Returns accepted within 7 days with receipt.');
+$invoice_footer = get_setting('invoice_footer', '');
 $company_logo = get_setting('company_logo');
 $show_logo = get_setting('show_logo_in_invoice') === '1';
-$currency = get_setting('currency', 'KWD');
-$decimals = ($currency === 'KWD') ? 3 : 2;
+$tc        = get_tax_config();
+$currency  = $tc['currency'];
+$decimals  = $tc['currency_decimals'];
+$vat_number = $tc['vat_number'] ?: get_setting('vat_number', '');
+$tax_label  = $tc['tax_label'] ?: 'VAT';
+$has_tax    = $tc['tax_type'] !== 'none' && $tc['tax_rate'] > 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -108,8 +111,7 @@ $decimals = ($currency === 'KWD') ? 3 : 2;
         <span class="arabic">شركة ريتيل برو الكويتية</span>
         <p><?= htmlspecialchars($company_address) ?></p>
         <p><?= htmlspecialchars($company_phone) ?></p>
-        <p>VAT: <?= htmlspecialchars($vat_number) ?></p>
-        <p class="arabic">الرقم الضريبي: <?= htmlspecialchars($vat_number) ?></p>
+        <?php if ($vat_number): ?><p><?= htmlspecialchars($tax_label) ?> No: <?= htmlspecialchars($vat_number) ?></p><?php endif; ?>
       </div>
       <div class="invoice-title">
         <h2>INVOICE</h2>
@@ -207,7 +209,7 @@ $decimals = ($currency === 'KWD') ? 3 : 2;
         <span style="color: #dc3545">-<?= $currency ?> <?= number_format($inv['discount'], $decimals) ?></span>
       </div>
       <?php endif; ?>
-      <?php if ($inv['vat'] > 0): ?>
+      <?php if ($inv['vat'] > 0 && $has_tax): ?>
       <div class="total-row">
         <span class="total-label">VAT (5%) | الضريبة:</span>
         <span><?= $currency ?> <?= number_format($inv['vat'], $decimals) ?></span>

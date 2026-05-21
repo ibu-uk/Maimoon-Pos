@@ -11,15 +11,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'adjus
     $pid    = (int)$_POST['product_id'];
     $bid    = (int)$_POST['branch_id'];
     $type   = $_POST['type'];
-    $qty    = (int)$_POST['qty'];
+    $qty    = abs((int)$_POST['qty']);
     $ref    = trim($_POST['reference']);
     $notes  = trim($_POST['notes']);
     $uid    = current_user()['id'];
 
-    $delta = in_array($type, ['in','return']) ? $qty : -$qty;
+    if ($qty < 1) {
+        header('Location: ' . BASE . '/inventory.php?error=' . urlencode('Quantity must be at least 1'));
+        exit;
+    }
+
+    if ($type === 'transfer') {
+        $to_bid = (int)($_POST['to_branch_id'] ?? 0);
+        if (!$to_bid || $to_bid === $bid) {
+            header('Location: ' . BASE . '/inventory.php?error=' . urlencode('Transfer requires a different destination branch'));
+            exit;
+        }
+        // Check source has enough stock
+        $avail = $db->prepare("SELECT COALESCE(qty,0) FROM stock WHERE product_id=? AND branch_id=?");
+        $avail->execute([$pid, $bid]);
+        $avail_qty = (int)$avail->fetchColumn();
+        if ($avail_qty < $qty) {
+            header('Location: ' . BASE . '/inventory.php?error=' . urlencode("Not enough stock — only $avail_qty units available in source branch"));
+            exit;
+        }
+        $note_out = "Transfer OUT to branch #$to_bid" . ($notes ? ": $notes" : '');
+        $note_in  = "Transfer IN from branch #$bid" . ($notes ? ": $notes" : '');
+        $db->prepare("INSERT INTO stock_movements (product_id,branch_id,type,qty,reference,notes,user_id) VALUES (?,?,'transfer',?,?,?,?)")->execute([$pid,$bid,-$qty,$ref,$note_out,$uid]);
+        $db->prepare("INSERT INTO stock_movements (product_id,branch_id,type,qty,reference,notes,user_id) VALUES (?,?,'transfer',?,?,?,?)")->execute([$pid,$to_bid,$qty,$ref,$note_in,$uid]);
+        $db->prepare("INSERT INTO stock (product_id,branch_id,qty) VALUES (?,?,?) ON DUPLICATE KEY UPDATE qty=qty+?")->execute([$pid,$bid,-$qty,-$qty]);
+        $db->prepare("INSERT INTO stock (product_id,branch_id,qty) VALUES (?,?,?) ON DUPLICATE KEY UPDATE qty=qty+?")->execute([$pid,$to_bid,$qty,$qty]);
+        header('Location: ' . BASE . '/inventory.php?success=' . urlencode("Transfer of $qty units completed"));
+        exit;
+    }
+
+    $delta = in_array($type, ['in','return','adjustment']) ? $qty : -$qty;
+
+    // Prevent stock going negative for out/damage
+    if ($delta < 0) {
+        $avail = $db->prepare("SELECT COALESCE(qty,0) FROM stock WHERE product_id=? AND branch_id=?");
+        $avail->execute([$pid, $bid]);
+        $avail_qty = (int)$avail->fetchColumn();
+        if ($avail_qty + $delta < 0) {
+            header('Location: ' . BASE . '/inventory.php?error=' . urlencode("Cannot remove $qty units — only $avail_qty available"));
+            exit;
+        }
+    }
+
     $db->prepare("INSERT INTO stock_movements (product_id,branch_id,type,qty,reference,notes,user_id) VALUES (?,?,?,?,?,?,?)")->execute([$pid,$bid,$type,$delta,$ref,$notes,$uid]);
     $db->prepare("INSERT INTO stock (product_id,branch_id,qty) VALUES (?,?,?) ON DUPLICATE KEY UPDATE qty=qty+?")->execute([$pid,$bid,$delta,$delta]);
-    header('Location: ' . BASE . '/inventory.php?success=' . urlencode('Stock updated'));
+    header('Location: ' . BASE . '/inventory.php?success=' . urlencode('Stock updated successfully'));
     exit;
 }
 
@@ -68,7 +109,10 @@ $all_branches = $db->query("SELECT id, name FROM branches WHERE is_active=1")->f
 $sp_page = max(1, (int)($_GET['sp'] ?? 1));
 $sp_per  = 20;
 $sp_offset = ($sp_page - 1) * $sp_per;
-$total_stock_items = $db->query("SELECT COUNT(*) FROM products WHERE is_active=1")->fetchColumn();
+$total_stock_items = $db->query("
+    SELECT COUNT(DISTINCT p.id) FROM products p
+    LEFT JOIN stock s ON s.product_id = p.id $bwhere_stock
+    WHERE p.is_active=1")->fetchColumn();
 $total_sp_pages = ceil($total_stock_items / $sp_per);
 
 $stock_table = $db->query("
@@ -87,6 +131,8 @@ require __DIR__ . '/includes/header.php';
 
 <?php if (isset($_GET['success'])): ?>
 <div class="alert alert-success" style="margin-bottom:12px">✅ <?= htmlspecialchars($_GET['success']) ?></div>
+<?php elseif (isset($_GET['error'])): ?>
+<div class="alert alert-error" style="margin-bottom:12px">❌ <?= htmlspecialchars($_GET['error']) ?></div>
 <?php endif; ?>
 
 <?php if ($filter_branch_id && $branch_name_filter): ?>
@@ -150,7 +196,7 @@ require __DIR__ . '/includes/header.php';
       <span><?= __('showing') ?> <?= count($stock_table) ?> <?= __('of') ?> <?= $total_stock_items ?></span>
       <div class="pagination">
         <?php for ($i = 1; $i <= $total_sp_pages; $i++): ?>
-        <a href="?sp=<?= $i ?>&mp=<?= $mv_page ?>" class="page-link <?= $i === $sp_page ? 'active' : '' ?>"><?= $i ?></a>
+        <a href="?sp=<?= $i ?>&mp=<?= $mv_page ?><?= $filter_branch_id ? '&branch_id='.$filter_branch_id : '' ?>" class="page-link <?= $i === $sp_page ? 'active' : '' ?>"><?= $i ?></a>
         <?php endfor; ?>
       </div>
     </div>
@@ -181,7 +227,7 @@ require __DIR__ . '/includes/header.php';
       <span><?= __('showing') ?> <?= count($movements) ?> <?= __('of') ?> <?= $total_movements ?></span>
       <div class="pagination">
         <?php for ($i = 1; $i <= $total_mv_pages; $i++): ?>
-        <a href="?sp=<?= $sp_page ?>&mp=<?= $i ?>" class="page-link <?= $i === $mv_page ? 'active' : '' ?>"><?= $i ?></a>
+        <a href="?sp=<?= $sp_page ?>&mp=<?= $i ?><?= $filter_branch_id ? '&branch_id='.$filter_branch_id : '' ?>" class="page-link <?= $i === $mv_page ? 'active' : '' ?>"><?= $i ?></a>
         <?php endfor; ?>
       </div>
     </div>
@@ -218,7 +264,7 @@ require __DIR__ . '/includes/header.php';
           </div>
           <div class="form-group">
             <label class="form-label"><?= __('type') ?> *</label>
-            <select class="form-select" name="type" required>
+            <select class="form-select" name="type" id="mov-type" required onchange="onTypeChange()">
               <option value="in">📥 Stock IN</option>
               <option value="out">📤 Stock OUT</option>
               <option value="transfer">🔄 Transfer</option>
@@ -232,6 +278,15 @@ require __DIR__ . '/includes/header.php';
           <div class="form-group"><label class="form-label"><?= __('qty') ?> *</label><input class="form-input" name="qty" type="number" min="1" value="1" required></div>
           <div class="form-group"><label class="form-label"><?= __('reference') ?></label><input class="form-input" name="reference" placeholder="e.g. PO-2025-0041"></div>
         </div>
+        <div id="transfer-dest" style="display:none" class="form-group">
+          <label class="form-label">Destination Branch *</label>
+          <select class="form-select" name="to_branch_id" id="to-branch-sel">
+            <option value="">Select destination...</option>
+            <?php foreach ($all_branches as $b): ?>
+            <option value="<?= $b['id'] ?>"><?= htmlspecialchars($b['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
         <div class="form-group"><label class="form-label"><?= __('notes') ?></label><textarea class="form-textarea" name="notes"></textarea></div>
       </div>
       <div class="modal-footer">
@@ -242,12 +297,25 @@ require __DIR__ . '/includes/header.php';
   </div>
 </div>
 
-<?php
-$extra_js = '<script>
+<?php ob_start(); ?>
+<script>
+
+function onTypeChange() {
+  var t = document.getElementById("mov-type").value;
+  var dest = document.getElementById("transfer-dest");
+  var toBranch = document.getElementById("to-branch-sel");
+  if (t === "transfer") {
+    dest.style.display = "block";
+    toBranch.required = true;
+  } else {
+    dest.style.display = "none";
+    toBranch.required = false;
+    toBranch.value = "";
+  }
+}
 function openStockModal(type) {
-  var sel = document.querySelector("[name=type]");
-  if (sel) sel.value = type || "in";
-  // Pre-select filtered branch if one is active
+  var sel = document.getElementById("mov-type");
+  if (sel) { sel.value = type || "in"; onTypeChange(); }
   var bid = <?= $filter_branch_id ?: 0 ?>;
   if (bid) {
     var bsel = document.querySelector("[name=branch_id]");
@@ -255,15 +323,18 @@ function openStockModal(type) {
   }
   openModal("stock-modal");
 }
+const COMPANY_NAME = "<?= htmlspecialchars(get_setting('company_name', APP_NAME)) ?>";
 function printInventory() {
   const table = document.getElementById("stock-table");
   const win = window.open("","_blank");
   win.document.write("<html><head><title>Inventory</title><style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f0f2f5;font-weight:600}.header{text-align:center;margin-bottom:20px}</style></head><body>");
-  win.document.write("<div class=header><h2>RetailPro — Inventory Report</h2><p>Generated: " + new Date().toLocaleDateString() + "</p></div>");
+  win.document.write("<div class=header><h2>" + COMPANY_NAME + " — Inventory Report</h2><p>Generated: " + new Date().toLocaleDateString() + "</p></div>");
   win.document.write(table.outerHTML);
   win.document.write("</body></html>");
   win.document.close();
   win.print();
 }
-</script>';
+</script>
+<?php
+$extra_js = ob_get_clean();
 require __DIR__ . '/includes/footer.php'; ?>

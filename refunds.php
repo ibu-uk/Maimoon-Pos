@@ -1,22 +1,32 @@
 <?php
 require_once __DIR__ . '/includes/config.php';
 require_login();
+require_role('super_admin', 'manager');
 $current_page = 'refunds';
 $page_title   = __('returns_refunds');
-$currency     = get_setting('currency', 'KWD');
+$tc           = get_tax_config();
+$currency     = $tc['currency'];
+$decimals     = $tc['currency_decimals'];
 $db = db();
 $user = current_user();
-$is_super = ($user['role'] === 'super_admin' && !$user['branch_id']);
-$bfilter  = $is_super ? "" : "AND p.branch_id = " . (int)$user['branch_id'];
+$is_super   = ($user['role'] === 'super_admin');
+$branch_id  = (int)($user['branch_id'] ?? 0);
+
+// payments table has NO branch_id column — filter via invoices join
+$bfilter      = $is_super ? "" : "AND i.branch_id = $branch_id";
+$bfilter_stat = $is_super ? "" : "AND p.invoice_id IN (SELECT id FROM invoices WHERE branch_id = $branch_id)";
 
 // Stats
-$today_amt = $db->query("SELECT COALESCE(SUM(amount),0) FROM payments
-    WHERE type='customer' AND notes LIKE 'Refund:%' AND DATE(created_at)=CURDATE()")->fetchColumn();
-$month_amt = $db->query("SELECT COALESCE(SUM(amount),0) FROM payments
+$today_amt = $db->query("SELECT COALESCE(SUM(amount),0) FROM payments p
+    WHERE type='customer' AND notes LIKE 'Refund:%' AND DATE(created_at)=CURDATE()
+    $bfilter_stat")->fetchColumn();
+$month_amt = $db->query("SELECT COALESCE(SUM(amount),0) FROM payments p
     WHERE type='customer' AND notes LIKE 'Refund:%'
-    AND MONTH(created_at)=MONTH(NOW()) AND YEAR(created_at)=YEAR(NOW())")->fetchColumn();
-$total_count = $db->query("SELECT COUNT(*) FROM payments
-    WHERE type='customer' AND notes LIKE 'Refund:%'")->fetchColumn();
+    AND MONTH(created_at)=MONTH(NOW()) AND YEAR(created_at)=YEAR(NOW())
+    $bfilter_stat")->fetchColumn();
+$total_count = $db->query("SELECT COUNT(*) FROM payments p
+    WHERE type='customer' AND notes LIKE 'Refund:%'
+    $bfilter_stat")->fetchColumn();
 
 // Recent refunds — joined to invoices for branch filter
 $recent = $db->query("
@@ -92,7 +102,7 @@ require __DIR__ . '/includes/header.php';
           <tr style="background:var(--bg3)">
             <td colspan="6" style="padding:10px 12px;text-align:right;font-weight:600">Total Refund:</td>
             <td colspan="2" style="padding:10px 12px;font-size:16px;font-weight:700">
-              <span id="refund-total">0.000</span> <span style="font-size:14px;color:var(--text3)"><?= $currency ?></span>
+              <span id="refund-total">0.<?= str_repeat('0', $decimals) ?></span> <span style="font-size:14px;color:var(--text3)"><?= $currency ?></span>
             </td>
           </tr>
         </tfoot>
@@ -197,9 +207,10 @@ require __DIR__ . '/includes/header.php';
   </div>
 </div>
 
-<?php
-$extra_js = '<script>
+<?php ob_start(); ?>
+<script>
 const CURRENCY = "' . $currency . '";
+const DECIMALS = ' . $decimals . ';
 let currentInvoice = null;
 let invoiceItems   = [];
 
@@ -232,8 +243,8 @@ function searchInvoice() {
 // ── RENDER INVOICE ──
 function renderResult() {
   const inv = currentInvoice;
-  const paidAmt = parseFloat(inv.paid_amount).toFixed(3);
-  const totAmt  = parseFloat(inv.total).toFixed(3);
+  const paidAmt = parseFloat(inv.paid_amount).toFixed(DECIMALS);
+  const totAmt  = parseFloat(inv.total).toFixed(DECIMALS);
 
   const statusColors = { paid:"var(--green)", credit:"var(--amber)", partial:"var(--blue)", refunded:"var(--text3)" };
   const color = statusColors[inv.status] || "var(--text2)";
@@ -280,12 +291,12 @@ function renderResult() {
       "<td class=\"hide-mobile\">" + batchInfo + "</td>" +
       "<td class=\"hide-mobile\">" + (item.expiry_date ? "<span style=\"font-size:11px;color:var(--amber)\">" + item.expiry_date + "</span>" : "<span style=\"color:var(--text3)\">—</span>") + "</td>" +
       "<td style=\"font-weight:600\">" + item.qty + "</td>" +
-      "<td>" + CURRENCY + " " + unitPrice.toFixed(3) + "</td>" +
-      "<td style=\"color:var(--green);font-weight:600\">" + CURRENCY + " " + parseFloat(item.total).toFixed(3) + "</td>" +
+      "<td>" + CURRENCY + " " + unitPrice.toFixed(DECIMALS) + "</td>" +
+      "<td style=\"color:var(--green);font-weight:600\">" + CURRENCY + " " + parseFloat(item.total).toFixed(DECIMALS) + "</td>" +
       "<td><input type=\"number\" min=\"0\" max=\"" + item.qty + "\" value=\"0\"" +
         " data-item-id=\"" + item.id + "\"" +
         " data-max-qty=\"" + item.qty + "\"" +
-        " data-unit-price=\"" + unitPrice.toFixed(3) + "\"" +
+        " data-unit-price=\"" + unitPrice.toFixed(DECIMALS) + "\"" +
         " data-paid-ratio=\"" + (inv.total > 0 ? inv.paid_amount / inv.total : 1) + "\"" +
         " class=\"form-input refund-qty\" style=\"width:65px;text-align:center;padding:6px\"" +
         " onchange=\"calcRefundTotal()\"></td>" +
@@ -310,7 +321,7 @@ function calcRefundTotal() {
     const lineRefund = qty * parseFloat(inp.dataset.unitPrice);
     total += lineRefund;
     const cell = document.getElementById("line-refund-" + inp.dataset.itemId);
-    if (cell) cell.textContent = CURRENCY + " " + lineRefund.toFixed(3);
+    if (cell) cell.textContent = CURRENCY + " " + lineRefund.toFixed(DECIMALS);
   });
 
   // Cap to paid amount for non-credit refunds
@@ -318,7 +329,7 @@ function calcRefundTotal() {
   const maxRefund = refundMode === "credit" ? 999999 : parseFloat(inv.paid_amount);
   const actualRefund = Math.min(total, maxRefund);
 
-  document.getElementById("refund-total").textContent = actualRefund.toFixed(3);
+  document.getElementById("refund-total").textContent = actualRefund.toFixed(DECIMALS);
   document.getElementById("refund-btn").disabled = actualRefund <= 0;
 }
 
@@ -341,10 +352,22 @@ function processRefund() {
   const mode   = document.getElementById("refund-mode").value;
   const total  = document.getElementById("refund-total").textContent;
 
-  if (!confirm("Confirm Refund Processing\n\nAmount: " + CURRENCY + " " + total + "\nPayment Method: " + mode.toUpperCase() + "\nReason: " + reason + "\n\nThis action will:\n• Return selected items to inventory\n• Process the refund payment\n• Update the invoice status\n\nThis action cannot be undone. Do you want to proceed?")) return;
+  appConfirm({
+    type:        'refund',
+    title:       'Confirm Refund',
+    message:     CURRENCY + ' ' + total + '  ·  ' + mode.toUpperCase() + '  ·  ' + reason,
+    detail:      'This will return selected items to inventory, process the refund payment, and update the invoice status. This cannot be undone.',
+    confirmText: '↩️ Process Refund',
+    cancelText:  'Cancel',
+    onConfirm:   function() {
+      document.getElementById("refund-btn").disabled = true;
+      document.getElementById("refund-btn").textContent = "Processing...";
+      _doRefund(items, reason, mode, total);
+    }
+  });
+}
 
-  document.getElementById("refund-btn").disabled = true;
-  document.getElementById("refund-btn").textContent = "Processing...";
+function _doRefund(items, reason, mode, total) {
 
   fetch("' . BASE . '/api/refund.php", {
     method: "POST",
@@ -387,5 +410,7 @@ function resetRefund() {
 document.getElementById("inv-search").addEventListener("keydown", function(e) {
   if (e.key === "Enter") searchInvoice();
 });
-</script>';
+</script>
+<?php
+$extra_js = ob_get_clean();
 require __DIR__ . '/includes/footer.php';

@@ -78,7 +78,7 @@ code{color:var(--accent);background:var(--bg4);padding:1px 6px;border-radius:4px
   <form method="POST">
     <div class="form-group">
       <label class="form-label"><?= __('email_address') ?></label>
-      <input class="form-input" type="email" name="email" placeholder="admin@retailpro.kw" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required autofocus>
+      <input class="form-input" type="email" name="email" placeholder="<?= htmlspecialchars(get_setting('admin_email','admin@company.com')) ?>" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required autofocus>
     </div>
     <div class="form-group">
       <label class="form-label"><?= __('password') ?></label>
@@ -88,7 +88,7 @@ code{color:var(--accent);background:var(--bg4);padding:1px 6px;border-radius:4px
   </form>
   <div class="demo-box">
     <strong><?= __('demo_credentials') ?></strong>
-    <?= __('email') ?>: <code>admin@retailpro.kw</code><br>
+    <?= __('email') ?>: <code><?= htmlspecialchars(get_setting('admin_email','admin@company.com')) ?></code><br>
     <?= __('password') ?>: <code>password</code>
   </div>
 </div>

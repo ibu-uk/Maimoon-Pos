@@ -41,7 +41,12 @@ $products = $db->query("
            COALESCE(sc.name,'') as sub_category,
            COALESCE(sc.emoji,'') as sub_cat_emoji,
            p.retail_price, p.wholesale_price,
-           COALESCE(s.qty,0) as stock
+           COALESCE(s.qty,0) as stock,
+           p.has_expiry,
+           COALESCE(p.expiry_alert_days, 90) as expiry_alert_days,
+           (SELECT MIN(sb.expiry_date) FROM stock_batches sb
+            WHERE sb.product_id = p.id AND sb.branch_id = $branch_id
+            AND sb.qty_remaining > 0 AND sb.expiry_date IS NOT NULL) as earliest_expiry
     FROM products p
     LEFT JOIN categories c  ON c.id = p.category_id
     LEFT JOIN categories sc ON sc.id = p.sub_category_id
@@ -75,8 +80,14 @@ if ($is_super) {
     }
 }
 $customers  = $db->query("SELECT id, name, COALESCE(company_name,'') as company_name, phone, type, balance FROM customers WHERE is_active=1 ORDER BY id ASC")->fetchAll();
-$currency = get_setting('currency', 'KWD');
-if (!$currency || $currency === '0') $currency = 'KWD';
+$tc       = get_tax_config();
+$currency = $tc['currency'] ?: 'KWD';
+$decimals = $tc['currency_decimals'];
+$tax_rate  = (float)$tc['tax_rate'];
+$tax_type  = $tc['tax_type'];
+$tax_label = $tc['tax_label'] ?: 'Tax';
+$tax_inclusive = $tc['tax_inclusive'] === '1';
+$has_tax   = $tax_type !== 'none' && $tax_rate > 0;
 
 // Active offers for POS
 $active_offers = $db->query("
@@ -223,6 +234,12 @@ require __DIR__ . '/includes/header.php';
           </div>
           <span id="cart-discount" style="color:var(--red)">- 0.000</span>
         </div>
+        <?php if ($has_tax): ?>
+        <div class="cart-row" id="tax-row" style="color:var(--amber)">
+          <span><?= htmlspecialchars($tax_label) ?> (<?= $tax_rate ?>%<?= $tax_inclusive ? ' incl.' : '' ?>)</span>
+          <span id="cart-tax">0.000</span>
+        </div>
+        <?php endif; ?>
         <div class="cart-row total"><span><?= __('total') ?></span><span id="cart-total" class="text-green">0.000</span></div>
       </div>
       <div style="margin-bottom:10px;font-size:12px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:.5px"><?= __('payment_mode') ?></div>
@@ -294,7 +311,10 @@ $products_data = array_map(function($p) {
         'stock'     => (int)$p['stock'],
         'emoji'     => $p['emoji'] ?: ($p['sub_cat_emoji'] ?: ($p['cat_emoji'] ?: '📦')),
         'bg'        => 'rgba(67,97,238,0.08)',
-        'barcode'   => $p['barcode'] ?? '',
+        'barcode'      => $p['barcode'] ?? '',
+        'has_expiry'   => (int)($p['has_expiry'] ?? 0),
+        'alert_days'   => (int)($p['expiry_alert_days'] ?? 90),
+        'expiry_date'  => $p['earliest_expiry'] ?? null,
     ];
 }, $products);
 
@@ -576,6 +596,7 @@ function renderProductGrid(prods) {
       + '<div class="product-name">'+p.name+arName+'</div>'
       + '<div class="product-sku">'+p.sku+'</div>'
       + '<div class="product-price" style="color:'+priceColor+'"><?= $currency ?> '+displayPrice.toFixed(3)+priceTag+'</div>'
+      + (p.expiry_badge ? '<div style="font-size:10px;padding:2px 6px;border-radius:4px;margin-top:3px;display:inline-block;background:'+p.expiry_badge.bg+';color:'+p.expiry_badge.color+'">'+p.expiry_badge.label+'</div>' : '')
       + '<div class="product-stock" style="color:'+stockColor+'">'+p.stock+' '+LANG.in_stock+warn+'</div>'
       + '</div>';
   }).join("");
@@ -601,7 +622,7 @@ function addToCart(id) {
   if (existing) {
     existing.qty++;
   } else {
-    cart.push({...p, price: usePrice, qty:1, disc:0, cat_id: p.cat_id});
+    cart.push({...p, price: usePrice, qty:1, disc:0, cat_id: p.cat_id, expiry_badge: p.expiry_badge});
   }
   renderCart();
   showToast(LANG.added, p.name, "success");
@@ -639,9 +660,26 @@ function recalc() {
   const total = afterPromo - globalDisc;
   const totalDisc = itemDiscTotal + globalDisc;
 
-  document.getElementById("cart-subtotal").textContent = sub.toFixed(3);
-  document.getElementById("cart-discount").textContent = "- " + totalDisc.toFixed(3);
-  document.getElementById("cart-total").textContent    = total.toFixed(3);
+  // Tax calculation
+  const TAX_RATE      = <?= $tax_rate ?>;
+  const TAX_INCLUSIVE = <?= $tax_inclusive ? 'true' : 'false' ?>;
+  const HAS_TAX       = <?= $has_tax ? 'true' : 'false' ?>;
+  const DEC           = <?= $decimals ?>;
+  let taxAmt = 0, grandTotal = total;
+  if (HAS_TAX && TAX_RATE > 0) {
+    if (TAX_INCLUSIVE) {
+      taxAmt = total - (total / (1 + TAX_RATE/100));
+      grandTotal = total;
+    } else {
+      taxAmt = total * TAX_RATE / 100;
+      grandTotal = total + taxAmt;
+    }
+  }
+  document.getElementById("cart-subtotal").textContent = sub.toFixed(DEC);
+  document.getElementById("cart-discount").textContent = "- " + totalDisc.toFixed(DEC);
+  const taxEl = document.getElementById("cart-tax");
+  if (taxEl) taxEl.textContent = (TAX_INCLUSIVE ? "(incl.) " : "+ ") + taxAmt.toFixed(DEC);
+  document.getElementById("cart-total").textContent = grandTotal.toFixed(DEC);
   document.getElementById("cart-count").textContent    = cart.reduce((a,i)=>a+i.qty,0) + " " + LANG.items;
 
   // Show promo
@@ -725,10 +763,11 @@ function renderCart() {
     var netColor  = item.disc > 0 ? '#16a34a' : 'var(--text)';
     var arSpan    = item.name_ar ? '<div style="font-size:10px;color:var(--text3);direction:rtl">' + item.name_ar + '</div>' : '';
     var discSpan  = item.disc > 0 ? '<span style="font-size:10px;color:#ef4444">-' + lineDisc.toFixed(3) + '</span>' : '';
+    var expirySpan = item.expiry_badge ? '<div style="font-size:10px;padding:1px 5px;border-radius:3px;margin-top:2px;background:'+item.expiry_badge.bg+';color:'+item.expiry_badge.color+'">'+item.expiry_badge.label+'</div>' : '';
     html += '<div class="cart-item" style="position:relative">';
     html +=   '<div style="font-size:20px;flex-shrink:0">' + item.emoji + '</div>';
     html +=   '<div style="flex:1;min-width:0">';
-    html +=     '<div style="font-size:12px;font-weight:600">' + item.name + arSpan + '</div>';
+    html +=     '<div style="font-size:12px;font-weight:600">' + item.name + arSpan + '</div>' + expirySpan;
     html +=     '<div style="display:flex;align-items:center;gap:4px;margin-top:3px">';
     html +=       '<button class="qty-btn" onclick="changeQty(' + item.id + ',-1)" style="width:22px;height:22px">-</button>';
     html +=       '<span style="font-size:12px;font-weight:700;min-width:20px;text-align:center">' + item.qty + '</span>';
@@ -808,6 +847,21 @@ function holdSale() {
   showToast(LANG.hold_msg, LANG.success, "warning");
 }
 
+function getExpiryBadge(p) {
+  if (!p.has_expiry || !p.expiry_date) return null;
+  var today = new Date(); today.setHours(0,0,0,0);
+  var exp   = new Date(p.expiry_date);
+  var diffMs = exp - today;
+  var days  = Math.floor(diffMs / 86400000);
+  if (days < 0)  return { label: '⛔ EXPIRED',          bg: '#fee2e2', color: '#b91c1c' };
+  if (days === 0) return { label: '⛔ Expires TODAY',    bg: '#fee2e2', color: '#b91c1c' };
+  if (days <= p.alert_days) return { label: '⚠️ Exp in '+days+'d', bg: '#fef3c7', color: '#92400e' };
+  return null;
+}
+
+// Pre-compute expiry badges on PRODUCTS array
+PRODUCTS.forEach(function(p) { p.expiry_badge = getExpiryBadge(p); });
+
 function processSale() {
   if (!cart.length) { showToast(LANG.warning, LANG.empty_cart, "warning"); return; }
   const discValue = parseFloat(document.getElementById("discount-value").value)||0;
@@ -819,6 +873,20 @@ function processSale() {
   }
   if (selectedPayMode === "credit" && customerId == 1) { showToast(LANG.error, LANG.select_customer_credit, "warning"); return; }
   const paidAmount = selectedPayMode === "partial" ? parseFloat(document.getElementById("partial-amount").value)||0 : null;
+  // ── Expiry check before submit ──────────────────────────────────────────
+  const expiredItems = cart.filter(i => i.expiry_badge && i.expiry_badge.color === '#b91c1c');
+  const warningItems = cart.filter(i => i.expiry_badge && i.expiry_badge.color === '#92400e');
+  if (expiredItems.length > 0) {
+    const names = expiredItems.map(i => i.name).join(', ');
+    showToast('Sale Blocked', 'Cannot sell expired product: ' + names + '. Remove from cart.', 'error');
+    return;
+  }
+  if (warningItems.length > 0) {
+    const names = warningItems.map(i => i.name + ' (' + i.expiry_badge.label + ')').join(', ');
+    showToast('Expiry Warning', names, 'warning');
+    // Allow sale to continue — just a warning
+  }
+
   const payload = { cart, payment_mode: selectedPayMode, discount_type: discountType, discount_value: discValue, customer_id: customerId, offer_id: appliedPromo ? appliedPromo.id : null, promo_discount: promoDiscount, paid_amount: paidAmount };
 
   fetch(BASE_URL + "/api/sale.php", {

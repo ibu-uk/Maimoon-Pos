@@ -3,7 +3,7 @@ return [
     // General
     'dir' => 'ltr',
     'lang_code' => 'en',
-    'app_name' => 'RetailPro ERP',
+    'app_name' => 'ERP System',
     'kuwait' => 'Kuwait',
     'save' => 'Save',
     'cancel' => 'Cancel',
@@ -344,7 +344,7 @@ return [
     'discount' => 'Discount',
     'vat' => 'VAT',
     'balance_due' => 'Balance Due',
-    'thank_you' => 'Thank you for shopping with RetailPro.',
+    'thank_you' => 'Thank you for your purchase.',
     'returns_policy' => 'Returns accepted within 7 days with receipt.',
 
     // Refunds

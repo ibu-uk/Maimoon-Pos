@@ -9,7 +9,7 @@ $_dir = $_rtl ? 'rtl' : 'ltr';
 <html lang="<?= $_lang ?>" dir="<?= $_dir ?>">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title><?= htmlspecialchars($page_title ?? __('nav_dashboard')) ?> — <?= __('app_name') ?></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -42,7 +42,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .user-avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#6d83f2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
 .user-name{font-size:13px;font-weight:500;color:var(--text)}
 .user-role{font-size:11px;color:var(--text3)}
-#hamburger{display:none;width:36px;height:36px;align-items:center;justify-content:center;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);cursor:pointer;font-size:18px;flex-shrink:0}
+#hamburger{display:none;width:40px;height:40px;align-items:center;justify-content:center;background:var(--accent);color:#fff;border:none;border-radius:var(--r);cursor:pointer;font-size:20px;flex-shrink:0;box-shadow:0 2px 8px rgba(67,97,238,.3)}
 #main{margin-left:var(--sidebar);flex:1;min-height:100vh;display:flex;flex-direction:column}
 #topbar{height:56px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:12px;position:sticky;top:0;z-index:50;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .page-title{font-size:15px;font-weight:600;flex:1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -210,8 +210,8 @@ select.search-input{cursor:pointer;background:var(--bg2)}
 
 /* ── RESPONSIVE ── */
 @media(max-width:900px){
-  #sidebar{transform:translateX(-100%)}
-  #sidebar.open{transform:none}
+  #sidebar{transform:translateX(-100%);transition:transform .25s ease}
+  #sidebar.open{transform:none;box-shadow:4px 0 24px rgba(0,0,0,.18)}
   #sidebar-overlay{display:block}
   #hamburger{display:flex}
   #main{margin-left:0!important;margin-right:0!important}
@@ -223,17 +223,27 @@ select.search-input{cursor:pointer;background:var(--bg2)}
 }
 @media(max-width:640px){
   .hide-mobile{display:none!important}
-  #topbar{padding:0 12px;gap:8px}
+  #topbar{padding:0 10px;gap:6px;height:52px}
+  .lang-btn{display:none!important}
+  .branch-pill{display:none!important}
+  .notif-btn{padding:6px!important}
   #content{padding:10px}
-  .card{padding:14px}
+  .card{padding:12px}
   .stats-grid{grid-template-columns:1fr 1fr;gap:8px}
-  .stat-value{font-size:20px}
-  .modal{max-height:95vh;border-radius:var(--r2) var(--r2) 0 0}
+  .stat-card{padding:12px}
+  .stat-value{font-size:18px}
+  .stat-icon{font-size:18px;margin-bottom:6px}
+  .modal{max-height:96vh;border-radius:var(--r2) var(--r2) 0 0;width:100%!important}
   .modal-backdrop{align-items:flex-end}
-  .toast-container{left:10px;right:10px;bottom:12px}
+  .toast-container{left:8px;right:8px;bottom:80px}
   .toast{min-width:0;width:100%}
   .form-row,.form-row-3{grid-template-columns:1fr}
-  .branch-pill span:not(.branch-dot){display:none}
+  .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  th,td{padding:8px 8px;font-size:12px}
+  .page-title{font-size:13px}
+  .btn-primary{padding:7px 10px;font-size:12px}
+  #bottom-nav{display:flex}
+  #content{padding-bottom:72px}
 }
 @media(max-width:900px){.hide-tablet{display:none!important}}
 
@@ -307,6 +317,33 @@ html[dir="rtl"] .toast.warning{border-left:none;border-right:3px solid var(--amb
 <!-- Sidebar overlay (mobile) -->
 <div id="sidebar-overlay" onclick="closeSidebar()"></div>
 
+<!-- Bottom nav (mobile only) -->
+<nav id="bottom-nav" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:98;background:var(--bg2);border-top:1px solid var(--border);height:60px;align-items:stretch;justify-content:space-around;box-shadow:0 -2px 12px rgba(0,0,0,.08)">
+  <a href="<?= BASE ?>/index.php"   class="bnav-item <?= ($current_page??'')==='dashboard'?'active':'' ?>">
+    <span class="bnav-icon">📊</span><span class="bnav-label">Home</span>
+  </a>
+  <a href="<?= BASE ?>/pos.php"     class="bnav-item <?= ($current_page??'')==='pos'?'active':'' ?>">
+    <span class="bnav-icon">🏪</span><span class="bnav-label">POS</span>
+  </a>
+  <a href="<?= BASE ?>/pos.php" class="bnav-center" aria-label="New Sale">
+    <div style="width:48px;height:48px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 4px 12px rgba(67,97,238,.4);margin-bottom:6px">+</div>
+  </a>
+  <a href="<?= BASE ?>/refunds.php" class="bnav-item <?= ($current_page??'')==='refunds'?'active':'' ?>">
+    <span class="bnav-icon">↩️</span><span class="bnav-label">Refunds</span>
+  </a>
+  <a href="javascript:void(0)" class="bnav-item" onclick="toggleSidebar()">
+    <span class="bnav-icon">☰</span><span class="bnav-label">Menu</span>
+  </a>
+</nav>
+
+<style>
+.bnav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-decoration:none;color:var(--text3);font-size:10px;font-weight:500;padding:4px 2px;gap:2px;transition:color .15s}
+.bnav-item.active{color:var(--accent)}
+.bnav-icon{font-size:18px;line-height:1}
+.bnav-label{font-size:10px;line-height:1}
+.bnav-center{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-decoration:none;margin-top:-16px}
+</style>
+
 <nav id="sidebar">
   <div class="sidebar-logo">
     <?php
@@ -352,17 +389,23 @@ html[dir="rtl"] .toast.warning{border-left:none;border-right:3px solid var(--amb
     <div class="nav-section">
       <div class="nav-label"><?= __('nav_people') ?></div>
       <a class="nav-item <?= $current_page==='customers'?'active':'' ?>" href="<?= BASE ?>/customers.php"><span class="nav-icon">👥</span> <?= __('nav_customers') ?></a>
+      <?php if (has_role('super_admin')): ?>
       <a class="nav-item <?= $current_page==='suppliers'?'active':'' ?>" href="<?= BASE ?>/suppliers.php"><span class="nav-icon">🏭</span> <?= __('nav_suppliers') ?></a>
+      <?php endif; ?>
     </div>
 
     <div class="nav-section">
       <div class="nav-label"><?= __('nav_finance') ?></div>
+      <?php if (has_role('super_admin')): ?>
       <a class="nav-item <?= $current_page==='purchases'?'active':'' ?>" href="<?= BASE ?>/purchases.php"><span class="nav-icon">🛒</span> <?= __('nav_purchases') ?></a>
+      <?php endif; ?>
       <a class="nav-item <?= $current_page==='payments'?'active':'' ?>" href="<?= BASE ?>/payments.php">
         <span class="nav-icon">💳</span> <?= __('nav_payments') ?>
         <?php try { $due=db()->query("SELECT COUNT(*) as c FROM customers WHERE balance<0")->fetch()['c']; if($due>0) echo "<span class='nav-badge'>$due</span>"; } catch(Exception $e){} ?>
       </a>
+      <?php if (has_role('super_admin')): ?>
       <a class="nav-item <?= $current_page==='expenses'?'active':'' ?>" href="<?= BASE ?>/expenses.php"><span class="nav-icon">💸</span> <?= __('nav_expenses') ?></a>
+      <?php endif; ?>
     </div>
 
     <div class="nav-section">
@@ -370,9 +413,11 @@ html[dir="rtl"] .toast.warning{border-left:none;border-right:3px solid var(--amb
       <a class="nav-item <?= $current_page==='branches'?'active':'' ?>" href="<?= BASE ?>/branches.php"><span class="nav-icon">🏢</span> <?= __('nav_branches') ?></a>
       <a class="nav-item <?= $current_page==='offers'?'active':'' ?>" href="<?= BASE ?>/offers.php"><span class="nav-icon">🎯</span> <?= __('nav_offers') ?></a>
       <a class="nav-item <?= $current_page==='reports'?'active':'' ?>" href="<?= BASE ?>/reports.php"><span class="nav-icon">📈</span> <?= __('nav_reports') ?></a>
+      <?php if (has_role('super_admin')): ?>
       <a class="nav-item <?= $current_page==='accounting'?'active':'' ?>" href="<?= BASE ?>/accounting.php"><span class="nav-icon">📒</span> <?= __('nav_accounting') ?></a>
       <a class="nav-item <?= $current_page==='users'?'active':'' ?>" href="<?= BASE ?>/users.php"><span class="nav-icon">🔐</span> <?= __('nav_users') ?></a>
       <a class="nav-item <?= $current_page==='settings'?'active':'' ?>" href="<?= BASE ?>/settings.php"><span class="nav-icon">⚙️</span> <?= __('nav_settings') ?></a>
+      <?php endif; ?>
     </div>
 
   </div>

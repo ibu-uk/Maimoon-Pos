@@ -2,9 +2,7 @@
 require_once __DIR__ . '/../includes/config.php';
 require_login();
 $_exp_co = preg_replace('/[^A-Za-z0-9_-]/', '_', trim(get_setting('company_name', 'Company')));
-$tc = get_tax_config();
-$currency = $tc['currency'];
-$decimals = $tc['currency_decimals'];
+$currency = get_setting('currency', 'KWD');
 
 $from      = $_GET['from'] ?? date('Y-m-01');
 $to        = $_GET['to'] ?? date('Y-m-d');
@@ -24,7 +22,7 @@ $invoices = $db->query("
 ")->fetchAll();
 
 // Generate CSV (opens natively in Excel)
-$filename = $_exp_co . '_Sales_' . $from . '_to_' . $to . '.csv';
+$filename = '$_exp_co . '_Sales_' . $from . '_to_' . $to . '.csv';
 
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $filename . '"');

@@ -286,6 +286,28 @@ function appConfirmInline(event, msg) {
 }
 </script>
 
+<script>
+// ── Swipe to open/close sidebar on mobile ─────────────────────────────────
+var _swipeStartX = 0;
+document.addEventListener('touchstart', function(e) {
+  _swipeStartX = e.touches[0].clientX;
+}, { passive: true });
+document.addEventListener('touchend', function(e) {
+  var dx = e.changedTouches[0].clientX - _swipeStartX;
+  var sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  var isRTL = document.documentElement.dir === 'rtl';
+  if (Math.abs(dx) < 40) return;
+  if (!isRTL) {
+    if (dx < -60 && sidebar.classList.contains('open')) closeSidebar();
+    if (dx > 60 && _swipeStartX < 40 && !sidebar.classList.contains('open')) toggleSidebar();
+  } else {
+    if (dx > 60 && sidebar.classList.contains('open')) closeSidebar();
+    if (dx < -60 && _swipeStartX > window.innerWidth - 40 && !sidebar.classList.contains('open')) toggleSidebar();
+  }
+}, { passive: true });
+</script>
+
 <?php if (!empty($extra_js)) echo $extra_js; ?>
 </body>
 </html>

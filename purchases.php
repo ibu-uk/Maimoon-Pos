@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/config.php';
 require_login();
+require_role('super_admin');
 $current_page = 'purchases';
 $page_title   = __('purchase_orders');
 $db = db();
@@ -334,11 +335,12 @@ function editPO(po) {
   document.getElementById("epo-notes").value = po.notes || "";
   openModal("edit-po-modal");
 }
+const COMPANY_NAME = "<?= htmlspecialchars(get_setting('company_name', APP_NAME)) ?>";
 function printPO() {
   const table = document.querySelector(".tbl-wrap table");
   const win = window.open("","_blank");
   win.document.write("<html><head><title>Purchase Orders</title><style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}th{background:#f0f2f5;font-weight:600}.header{text-align:center;margin-bottom:20px}</style></head><body>");
-  win.document.write("<div class=header><h2>RetailPro — Purchase Orders</h2></div>");
+  win.document.write("<div class=header><h2>" + COMPANY_NAME + " — Purchase Orders</h2></div>");
   const clone = table.cloneNode(true);
   clone.querySelectorAll("tr").forEach(row => { const cells = row.querySelectorAll("th,td"); if(cells.length>=8) cells[cells.length-1].remove(); });
   win.document.write(clone.outerHTML);

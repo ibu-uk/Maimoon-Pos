@@ -14,7 +14,7 @@ $stock = $db->query("
     GROUP BY p.id ORDER BY total_qty ASC
 ")->fetchAll();
 
-$filename = $_exp_co . '_Inventory_' . date('Y-m-d') . '.csv';
+$filename = '$_exp_co . '_Inventory_' . date('Y-m-d') . '.csv';
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('Cache-Control: no-cache, no-store, must-revalidate');

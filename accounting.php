@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/config.php';
 require_login();
+require_role('super_admin');
 $current_page = 'accounting';
 $page_title   = __('financial_statements');
 $db = db();

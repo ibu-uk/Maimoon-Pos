@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/config.php';
 require_login();
+require_role('super_admin');
 $current_page = 'users';
 $page_title   = __('user_management');
 $db = db();
@@ -155,7 +156,7 @@ require __DIR__ . '/includes/header.php';
       <div class="modal-body">
         <div class="form-row">
           <div class="form-group"><label class="form-label"><?= __('full_name') ?> *</label><input class="form-input" name="name" id="user-name" required placeholder="Ahmed Karim"></div>
-          <div class="form-group"><label class="form-label"><?= __('email') ?> *</label><input class="form-input" name="email" id="user-email" type="email" required placeholder="user@retailpro.kw"></div>
+          <div class="form-group"><label class="form-label"><?= __('email') ?> *</label><input class="form-input" name="email" id="user-email" type="email" required placeholder="user@company.com"></div>
         </div>
         <div class="form-group"><label class="form-label" id="pw-label"><?= __('password') ?> *</label><input class="form-input" name="password" id="user-pw" type="password" minlength="6" placeholder="Minimum 6 characters"></div>
         <div class="form-row">

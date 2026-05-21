@@ -1,7 +1,10 @@
 <?php
 require_once __DIR__ . '/../includes/config.php';
 require_login();
-$currency = get_setting('currency', 'KWD');
+$_exp_co = preg_replace('/[^A-Za-z0-9_-]/', '_', trim(get_setting('company_name', 'Company')));
+$tc = get_tax_config();
+$currency = $tc['currency'];
+$decimals = $tc['currency_decimals'];
 
 $db = db();
 $customers = $db->query("
@@ -12,7 +15,7 @@ $customers = $db->query("
     GROUP BY c.id ORDER BY c.name
 ")->fetchAll();
 
-$filename = 'RetailPro_Customers_' . date('Y-m-d') . '.csv';
+$filename = $_exp_co . '_Customers_' . date('Y-m-d') . '.csv';
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('Cache-Control: no-cache, no-store, must-revalidate');

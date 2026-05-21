@@ -457,14 +457,8 @@ require __DIR__ . '/includes/header.php';
   </div>
 </div>
 
-<?php
-// Pre-render PHP values so they are safe to embed inside the JS string
-$js_date_range  = date('d M Y', strtotime($from)) . ' – ' . date('d M Y', strtotime($to));
-$js_total_sales = fmt_money($summary['total_sales']);
-$js_inv_count   = (int)$summary['invoice_count'];
-$js_net_profit  = fmt_money($net_profit);
-
-$extra_js = '<script>
+<?php ob_start(); ?>
+<script>
 function switchTab(id, el) {
   ["sales-rpt","profit-rpt","cat-rpt","daily-rpt","paymode-rpt"].forEach(t => {
     document.getElementById(t).style.display = "none";
@@ -484,6 +478,7 @@ function editInvoice(inv) {
   openModal("inv-edit-modal");
 }
 
+const COMPANY_NAME = "<?= htmlspecialchars(get_setting('company_name', APP_NAME)) ?>";
 function printReport() {
   const table = document.getElementById("invoice-table");
   if (!table) return;
@@ -501,7 +496,7 @@ function printReport() {
     ".header{text-align:center;margin-bottom:20px}" +
     ".header h2{margin:0}.header p{color:#666;margin:4px 0}" +
     "</style></head><body>" +
-    "<div class=header><h2>RetailPro \u2014 Sales Report</h2>" +
+    "<div class=header><h2>" + COMPANY_NAME + " \u2014 Sales Report</h2>" +
     "<p>" + dateRange + "</p>" +
     "<p>Total: " + totalSales + " | Invoices: " + invCount + " | Net Profit: " + netProfit + "</p>" +
     "</div>"
@@ -516,5 +511,7 @@ function printReport() {
   win.document.close();
   win.print();
 }
-</script>';
+</script>
+<?php
+$extra_js = ob_get_clean();
 require __DIR__ . '/includes/footer.php';
