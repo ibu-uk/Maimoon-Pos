@@ -91,8 +91,8 @@ require __DIR__ . '/includes/header.php';
         <tfoot>
           <tr style="background:var(--bg3)">
             <td colspan="6" style="padding:10px 12px;text-align:right;font-weight:600">Total Refund:</td>
-            <td colspan="2" style="padding:10px 12px;font-size:16px;font-weight:700;color:var(--red)">
-              <span id="refund-total"><?= $currency ?> 0.000</span>
+            <td colspan="2" style="padding:10px 12px;font-size:16px;font-weight:700">
+              <span id="refund-total">0.000</span> <span style="font-size:14px;color:var(--text3)"><?= $currency ?></span>
             </td>
           </tr>
         </tfoot>
@@ -199,6 +199,7 @@ require __DIR__ . '/includes/header.php';
 
 <?php
 $extra_js = '<script>
+const CURRENCY = "' . $currency . '";
 let currentInvoice = null;
 let invoiceItems   = [];
 
@@ -206,7 +207,7 @@ let invoiceItems   = [];
 function searchInvoice() {
   const q   = document.getElementById("inv-search").value.trim();
   const btn = document.getElementById("search-btn");
-  if (!q) { showToast("Error", "Enter an invoice number", "warning"); return; }
+  if (!q) { showToast("Missing Information", "Please enter an invoice number", "warning"); return; }
 
   btn.disabled = true;
   btn.textContent = "Searching...";
@@ -216,7 +217,7 @@ function searchInvoice() {
     .then(function(data) {
       btn.disabled = false;
       btn.textContent = "🔍 Search";
-      if (data.error) { showToast("Not Found", data.error, "error"); return; }
+      if (data.error) { showToast("Invoice Not Found", data.error, "error"); return; }
       currentInvoice = data.invoice;
       invoiceItems   = data.items;
       renderResult();
@@ -224,7 +225,7 @@ function searchInvoice() {
     .catch(function() {
       btn.disabled = false;
       btn.textContent = "🔍 Search";
-      showToast("Error", "Network error — try again", "error");
+      showToast("Connection Error", "Unable to connect to server. Please check your internet connection.", "error");
     });
 }
 
@@ -245,8 +246,8 @@ function renderResult() {
     "<div style=\"font-size:13px;color:var(--text2)\">🏪 " + inv.branch_name + "</div>" +
     "<div style=\"font-size:13px;color:var(--text2)\">📅 " + inv.created_at + "</div>" +
     "<div style=\"margin-left:auto;text-align:right\">" +
-    "<div style=\"font-size:13px;color:var(--text3)\">Invoice Total: <strong style=\"color:var(--text)\"><?= $currency ?> " + totAmt + "</strong></div>" +
-    "<div style=\"font-size:12px;color:var(--text3)\">Paid: <strong style=\"color:var(--green)\"><?= $currency ?> " + paidAmt + "</strong>" +
+    "<div style=\"font-size:13px;color:var(--text3)\">Invoice Total: <strong style=\"color:var(--text)\">" + CURRENCY + " " + totAmt + "</strong></div>" +
+    "<div style=\"font-size:12px;color:var(--text3)\">Paid: <strong style=\"color:var(--green)\">" + CURRENCY + " " + paidAmt + "</strong>" +
     (inv.status === "credit" ? " <span style=\"color:var(--amber)\">(credit — nothing paid)</span>" : "") +
     "</div></div></div>";
 
@@ -279,8 +280,8 @@ function renderResult() {
       "<td class=\"hide-mobile\">" + batchInfo + "</td>" +
       "<td class=\"hide-mobile\">" + (item.expiry_date ? "<span style=\"font-size:11px;color:var(--amber)\">" + item.expiry_date + "</span>" : "<span style=\"color:var(--text3)\">—</span>") + "</td>" +
       "<td style=\"font-weight:600\">" + item.qty + "</td>" +
-      "<td><?= $currency ?> " + unitPrice.toFixed(3) + "</td>" +
-      "<td style=\"color:var(--green);font-weight:600\"><?= $currency ?> " + parseFloat(item.total).toFixed(3) + "</td>" +
+      "<td>" + CURRENCY + " " + unitPrice.toFixed(3) + "</td>" +
+      "<td style=\"color:var(--green);font-weight:600\">" + CURRENCY + " " + parseFloat(item.total).toFixed(3) + "</td>" +
       "<td><input type=\"number\" min=\"0\" max=\"" + item.qty + "\" value=\"0\"" +
         " data-item-id=\"" + item.id + "\"" +
         " data-max-qty=\"" + item.qty + "\"" +
@@ -288,7 +289,7 @@ function renderResult() {
         " data-paid-ratio=\"" + (inv.total > 0 ? inv.paid_amount / inv.total : 1) + "\"" +
         " class=\"form-input refund-qty\" style=\"width:65px;text-align:center;padding:6px\"" +
         " onchange=\"calcRefundTotal()\"></td>" +
-      "<td id=\"line-refund-" + item.id + "\" style=\"font-weight:600;color:var(--red)\"><?= $currency ?> 0.000</td>" +
+      "<td id=\"line-refund-" + item.id + "\" style=\"font-weight:600;color:var(--red)\">" + CURRENCY + " 0.000</td>" +
       "</tr>";
   });
   document.getElementById("inv-items-body").innerHTML = rows;
@@ -309,7 +310,7 @@ function calcRefundTotal() {
     const lineRefund = qty * parseFloat(inp.dataset.unitPrice);
     total += lineRefund;
     const cell = document.getElementById("line-refund-" + inp.dataset.itemId);
-    if (cell) cell.textContent = "<?= $currency ?> " + lineRefund.toFixed(3);
+    if (cell) cell.textContent = CURRENCY + " " + lineRefund.toFixed(3);
   });
 
   // Cap to paid amount for non-credit refunds
@@ -317,7 +318,7 @@ function calcRefundTotal() {
   const maxRefund = refundMode === "credit" ? 999999 : parseFloat(inv.paid_amount);
   const actualRefund = Math.min(total, maxRefund);
 
-  document.getElementById("refund-total").textContent = "<?= $currency ?> " + actualRefund.toFixed(3);
+  document.getElementById("refund-total").textContent = actualRefund.toFixed(3);
   document.getElementById("refund-btn").disabled = actualRefund <= 0;
 }
 
@@ -334,13 +335,13 @@ function processRefund() {
     if (qty > 0) items.push({ item_id: parseInt(inp.dataset.itemId), qty_return: qty });
   });
 
-  if (!items.length) { showToast("Error", "Select at least one item to return", "warning"); return; }
+  if (!items.length) { showToast("No Items Selected", "Please select at least one item to return", "warning"); return; }
 
   const reason = document.getElementById("refund-reason").value;
   const mode   = document.getElementById("refund-mode").value;
   const total  = document.getElementById("refund-total").textContent;
 
-  if (!confirm("Process refund of " + total + " by " + mode.toUpperCase() + "?\n\nReason: " + reason + "\n\nThis will return items to stock and cannot be undone.")) return;
+  if (!confirm("Confirm Refund Processing\n\nAmount: " + CURRENCY + " " + total + "\nPayment Method: " + mode.toUpperCase() + "\nReason: " + reason + "\n\nThis action will:\n• Return selected items to inventory\n• Process the refund payment\n• Update the invoice status\n\nThis action cannot be undone. Do you want to proceed?")) return;
 
   document.getElementById("refund-btn").disabled = true;
   document.getElementById("refund-btn").textContent = "Processing...";
@@ -358,18 +359,18 @@ function processRefund() {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      showToast("✅ Refund Done", "Refunded " + data.refund_amount + " — Invoice: " + data.invoice_number, "success");
+      showToast("Refund Processed Successfully", "Refunded " + CURRENCY + " " + data.refund_amount + " - Invoice: " + data.invoice_number, "success");
       setTimeout(function() { location.reload(); }, 1500);
     } else {
       document.getElementById("refund-btn").disabled = false;
       document.getElementById("refund-btn").textContent = "↩️ Process Refund";
-      showToast("Error", data.error || "Refund failed", "error");
+      showToast("Refund Failed", data.error || "Unable to process refund. Please try again.", "error");
     }
   })
   .catch(function() {
     document.getElementById("refund-btn").disabled = false;
     document.getElementById("refund-btn").textContent = "↩️ Process Refund";
-    showToast("Error", "Network error — try again", "error");
+    showToast("Connection Error", "Unable to connect to server. Please check your internet connection.", "error");
   });
 }
 

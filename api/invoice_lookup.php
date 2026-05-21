@@ -23,7 +23,7 @@ if ($inv['status'] === 'refunded') json_response(['error' => 'This invoice is al
 
 // Get items
 $items_stmt = $db->prepare("
-    SELECT ii.*, p.name as product_name
+    SELECT ii.*, p.name as product_name, p.emoji
     FROM invoice_items ii
     LEFT JOIN products p ON p.id = ii.product_id
     WHERE ii.invoice_id = ?
@@ -36,10 +36,12 @@ json_response([
         'id'             => (int)$inv['id'],
         'invoice_number' => $inv['invoice_number'],
         'customer_name'  => $inv['customer_name'],
+        'branch_name'    => '',
         'payment_mode'   => $inv['payment_mode'],
         'subtotal'       => $inv['subtotal'],
         'discount'       => $inv['discount'],
         'total'          => $inv['total'],
+        'paid_amount'    => $inv['paid_amount'] ?? 0,
         'status'         => $inv['status'],
         'created_at'     => $inv['created_at'],
     ],
@@ -48,6 +50,7 @@ json_response([
             'id'           => (int)$i['id'],
             'product_id'   => (int)$i['product_id'],
             'product_name' => $i['product_name'],
+            'emoji'        => $i['emoji'] ?? '📦',
             'qty'          => (int)$i['qty'],
             'unit_price'   => $i['unit_price'],
             'total'        => $i['total'],
