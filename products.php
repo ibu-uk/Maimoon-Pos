@@ -228,8 +228,8 @@ require __DIR__ . '/includes/header.php';
           <td class="text-muted" style="font-size:11px"><?= fmt_money($p['cost_price']) ?></td>
           <td style="font-size:11px">
             <?php if ($unit === 'box'): ?>
-              <span style="color:var(--green);font-weight:600"><?= fmt_money($p['piece_price']) ?>/pc</span><br>
-              <span style="color:var(--text3);font-size:10px"><?= fmt_money($p['box_price']) ?>/box</span>
+              <span style="color:var(--green);font-weight:600"><?= fmt_money((float)($p['piece_price'] ?? 0)) ?>/pc</span><br>
+              <span style="color:var(--text3);font-size:10px"><?= fmt_money((float)($p['box_price'] ?? 0)) ?>/box</span>
             <?php elseif ($unit === 'pr'): ?>
               <span style="color:var(--green);font-weight:600"><?= fmt_money($p['retail_price']) ?>/pair</span>
             <?php elseif ($unit === 'doz'): ?>
